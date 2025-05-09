@@ -22,7 +22,14 @@ const metadata = {
   name: 'Fart.box: Gas Dominance',
   description: 'A web3 game of territory control with unique gas-based NFTs on Base network',
   url: typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000',
-  icons: ['/favicon.ico'], // Ensure this path is correct from the public directory
+  icons: [
+    '/favicon.ico',
+    '/favicon-16x16.png',
+    '/favicon-32x32.png', 
+    '/apple-touch-icon.png',
+    '/android-chrome-192x192.png',
+    '/android-chrome-512x512.png'
+  ],
 };
 
 const appKitNetworks: [typeof mainnet, ...Array<typeof mainnet | typeof base>] = [mainnet, base];
