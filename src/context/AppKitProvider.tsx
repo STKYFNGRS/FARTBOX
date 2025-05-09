@@ -1,6 +1,6 @@
 'use client';
 
-import { wagmiAdapter, projectId as envProjectId } from '../lib/wagmi'; // This path should now be correct
+import { wagmiAdapter, projectId as envProjectId, networks } from '../lib/wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createAppKit } from '@reown/appkit/react';
 import React, { type ReactNode } from 'react';
@@ -14,7 +14,7 @@ const projectId = envProjectId || 'YOUR_PROJECT_ID_PLACEHOLDER';
 
 if (!projectId || projectId === 'YOUR_PROJECT_ID_PLACEHOLDER') {
   console.warn(
-    'Reown AppKit: Project ID is not defined or using placeholder. Please set NEXT_PUBLIC_PROJECT_ID in your .env file.'
+    'Reown AppKit: Project ID is not defined or using placeholder. Please set NEXT_PUBLIC_REOWN_PROJECT_ID in your .env file.'
   );
 }
 
@@ -32,16 +32,15 @@ const metadata = {
   ],
 };
 
-const appKitNetworks: [typeof mainnet, ...Array<typeof mainnet | typeof base>] = [mainnet, base];
-
 createAppKit({
   adapters: [wagmiAdapter],
   projectId,
-  networks: appKitNetworks,
+  networks: [mainnet, base] as any, // Type cast to avoid type issues
   defaultNetwork: base,
   metadata: metadata,
   features: {
     analytics: true,
+    connectMethodsOrder: ['wallet', 'email', 'social'],
   },
 });
 

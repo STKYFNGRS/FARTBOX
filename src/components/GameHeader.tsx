@@ -18,14 +18,8 @@ export default function GameHeader({ isWalletConnected }: GameHeaderProps) {
         <div className="text-sm px-3 py-1 bg-yellow-500/20 text-yellow-400 rounded-full font-medium">
           SEASON 1 • ACTIVE
         </div>
-        {!isWalletConnected ? (
-          <appkit-button />
-        ) : (
-          <div className="flex items-center gap-2 px-3 py-1 bg-green-500/20 text-green-400 rounded-full">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span>Connected</span>
-          </div>
-        )}
+        
+        <appkit-button />
       </div>
     </header>
   );

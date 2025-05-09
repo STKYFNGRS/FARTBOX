@@ -6,10 +6,10 @@ import { useAccount } from 'wagmi';
 // import { useAppKit } from '@reown/appkit/react'; // Keep for now if any child needs a connect fn directly
 
 // Import your components
-import GameHeader from '@/components/GameHeader';
-import Sidebar from '@/components/Sidebar';
-import GameBoard from '@/components/GameBoard';
-import GameControls from '@/components/GameControls';
+import GameHeader from '../components/GameHeader';
+import Sidebar from '../components/Sidebar';
+import GameBoard from '../components/GameBoard';
+import GameControls from '../components/GameControls';
 
 // Define the active tab type if not already globally available
 export type ActiveTab = 'leaderboard' | 'profile' | 'chat';
@@ -61,7 +61,7 @@ export default function Home() {
       <div className="relative flex flex-1 overflow-hidden">
         {/* Sidebar Toggle Button - This could be part of the Sidebar component or main layout logic */}
         <div 
-          className="absolute left-4 top-1/2 transform -translate-y-1/2 z-30" // Increased z-index
+          className="absolute left-4 top-1/2 transform -translate-y-1/2 z-30 cursor-pointer"
           onClick={toggleSidebar}
         >
           <button className="p-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-full transition-all">

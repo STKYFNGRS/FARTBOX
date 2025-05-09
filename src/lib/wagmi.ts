@@ -1,9 +1,9 @@
-import { cookieStorage, createStorage } from '@wagmi/core';
+import { cookieStorage, createStorage, http } from '@wagmi/core';
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi';
 import { mainnet, base } from '@reown/appkit/networks'; // Added base network
 
-// TODO: Get projectId from https://cloud.reown.com and set it in your .env file
-export const projectId = process.env.NEXT_PUBLIC_PROJECT_ID;
+// Get projectId from https://cloud.reown.com
+export const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID;
 
 if (!projectId) {
   // In a real app, you'd throw an error or handle this case appropriately.
@@ -24,6 +24,10 @@ export const wagmiAdapter = new WagmiAdapter({
   ssr: true,
   projectId: effectiveProjectId,
   networks,
+  transports: {
+    [mainnet.id]: http(),
+    [base.id]: http(),
+  },
 });
 
 export const config = wagmiAdapter.wagmiConfig; 
