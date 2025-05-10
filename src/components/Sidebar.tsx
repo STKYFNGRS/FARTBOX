@@ -1,17 +1,43 @@
-import React from 'react';
+import React, { Dispatch, SetStateAction, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppKit } from '@reown/appkit/react';
 
+// Define ActiveTab locally since it was removed from page.tsx
 export type ActiveTab = 'leaderboard' | 'profile' | 'chat';
 
-interface SidebarProps {
+export interface SidebarProps {
   isOpen: boolean;
   activeTab: ActiveTab;
-  setActiveTab: React.Dispatch<React.SetStateAction<ActiveTab>>;
+  setActiveTab: Dispatch<SetStateAction<ActiveTab>>;
   isWalletConnected: boolean;
+  gameId?: string; // Optional for backward compatibility
 }
 
-export default function Sidebar({ isOpen, activeTab, setActiveTab, isWalletConnected }: SidebarProps) {
+const Sidebar = ({ isOpen, activeTab, setActiveTab, isWalletConnected, gameId }: SidebarProps) => {
+  const [leaderboardData, setLeaderboardData] = useState<{name: string, score: number, address: string}[]>([]);
+  
+  // Load different data based on gameId
+  useEffect(() => {
+    if (!gameId) {
+      // Load global leaderboard
+      setLeaderboardData([
+        { name: 'GasMaster', score: 9420, address: '0x1234...5678' },
+        { name: 'TootCommander', score: 8650, address: '0x2345...6789' },
+        { name: 'FartLord', score: 7890, address: '0x3456...7890' },
+        { name: 'GasGiant', score: 6540, address: '0x4567...8901' },
+        { name: 'StinkySol', score: 5430, address: '0x5678...9012' }
+      ]);
+    } else {
+      // Load game-specific leaderboard
+      setLeaderboardData([
+        { name: 'Player1', score: 3210, address: '0x1234...5678' },
+        { name: 'Player2', score: 2980, address: '0x2345...6789' },
+        { name: 'Player3', score: 2450, address: '0x3456...7890' }
+      ]);
+      console.log('Loading data for game:', gameId);
+    }
+  }, [gameId]);
+  
   return (
     <AnimatePresence>
       {isOpen && (
@@ -46,31 +72,38 @@ export default function Sidebar({ isOpen, activeTab, setActiveTab, isWalletConne
           
           {/* Sidebar Content based on active tab */}
           <div className="p-4 h-full overflow-y-auto">
-            {activeTab === 'leaderboard' && <LeaderboardTab />}
+            {activeTab === 'leaderboard' && <LeaderboardTab leaderboardData={leaderboardData} />}
             {activeTab === 'profile' && <ProfileTab isWalletConnected={isWalletConnected} />}
-            {activeTab === 'chat' && <ChatTab />}
+            {activeTab === 'chat' && <ChatTab isWalletConnected={isWalletConnected} />}
           </div>
         </motion.div>
       )}
     </AnimatePresence>
   );
-}
+};
 
-function LeaderboardTab() {
+function LeaderboardTab({ leaderboardData }: { leaderboardData: {name: string, score: number, address: string}[] }) {
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-medium text-green-400">Top Gas Dominators</h3>
-      {Array.from({ length: 10 }).map((_, i) => (
-        <div key={i} className="flex items-center justify-between p-2 bg-green-500/10 rounded-lg">
-          <div className="flex items-center gap-2">
-            <span className="w-6 h-6 flex items-center justify-center bg-green-500/20 text-green-400 rounded-full text-xs">
-              {i + 1}
-            </span>
-            <span className="text-sm font-medium">Player {(10000 + i).toString(16).toUpperCase()}</span>
-          </div>
-          <div className="text-sm text-yellow-400">{1000 - i * 50} TOOT</div>
+      {!leaderboardData.length ? (
+        <p className="text-gray-400">Loading leaderboard data...</p>
+      ) : (
+        <div className="space-y-2">
+          {leaderboardData.map((player, index) => (
+            <div key={index} className="flex items-center p-2 bg-green-500/10 rounded">
+              <div className="w-8 h-8 rounded-full bg-green-800 flex items-center justify-center mr-3">
+                {index + 1}
+              </div>
+              <div className="flex-1">
+                <div className="font-medium">{player.name}</div>
+                <div className="text-xs text-gray-400">{player.address}</div>
+              </div>
+              <div className="text-green-400 font-bold">{player.score}</div>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -137,7 +170,7 @@ function ProfileTab({ isWalletConnected }: { isWalletConnected: boolean }) {
   );
 }
 
-function ChatTab() {
+function ChatTab({ isWalletConnected }: { isWalletConnected: boolean }) {
   return (
     <div className="space-y-4 h-full flex flex-col">
       <h3 className="text-lg font-medium text-green-400">Gas Chamber Chat</h3>
@@ -179,4 +212,6 @@ function ChatTab() {
       </div>
     </div>
   );
-} 
+}
+
+export default Sidebar; 

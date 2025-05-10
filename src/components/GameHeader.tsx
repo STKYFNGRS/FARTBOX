@@ -15,8 +15,10 @@ export default function GameHeader({ isWalletConnected }: GameHeaderProps) {
       </div>
       
       <div className="flex items-center gap-4">
-        <div className="text-sm px-3 py-1 bg-yellow-500/20 text-yellow-400 rounded-full font-medium">
-          SEASON 1 • ACTIVE
+        <div className="hidden md:flex items-center gap-2">
+          <div className="px-3 py-1 rounded-full bg-yellow-900/30 text-yellow-500 text-xs font-medium border border-yellow-900/30">
+            SEASON 1 • COMING SOON
+          </div>
         </div>
         
         <appkit-button />
