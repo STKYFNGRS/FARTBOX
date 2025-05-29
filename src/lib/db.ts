@@ -47,166 +47,189 @@ export type QueryResult<T = Record<string, any>> = {
   rowCount: number;
 };
 
-// Check if we have a real database connection
-const isDatabaseConfigured = process.env.DATABASE_URL && 
-  process.env.DATABASE_URL !== 'postgresql://user:password@localhost:5432/fartbox';
+// Ensure DATABASE_URL is configured for Neon
+const DATABASE_URL = process.env.DATABASE_URL;
 
-// Create SQL query executor from DATABASE_URL
-const connectionString = process.env.DATABASE_URL || 'postgresql://user:password@localhost:5432/fartbox';
-
-let sql: any = null;
-if (isDatabaseConfigured) {
-  sql = neon(connectionString);
+if (!DATABASE_URL) {
+  throw new Error(
+    'DATABASE_URL environment variable is required. ' +
+    'Please configure your Neon database connection string. ' +
+    'Get your connection string from https://console.neon.tech'
+  );
 }
 
-// Helper function to execute SQL queries with params
-export async function query<T = Record<string, any>>(text: string, params: any[] = []): Promise<QueryResult<T>> {
-  // If no database is configured, return mock data
-  if (!isDatabaseConfigured || !sql) {
-    console.warn('DATABASE_URL not configured, using mock data');
-    return mockQueryResults<T>(text, params);
-  }
+if (DATABASE_URL.includes('localhost') || DATABASE_URL.includes('user:password')) {
+  throw new Error(
+    'Invalid DATABASE_URL detected. ' +
+    'Please use your actual Neon database connection string from https://console.neon.tech'
+  );
+}
 
+// Create SQL query executor from Neon DATABASE_URL
+const sql = neon(DATABASE_URL);
+
+/**
+ * Execute SQL queries using Neon serverless Postgres
+ * This function provides no fallbacks - it will fail if the database is unavailable
+ */
+export async function query<T = Record<string, any>>(text: string, params: any[] = []): Promise<QueryResult<T>> {
   try {
-    // Using direct SQL query with proper error handling
+    console.log(`[DB] Executing query: ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}`);
+    
+    // Execute query using Neon's serverless SQL
     const result = await sql(text, params);
     
-    // Add a rows property to match pg client format
-    return {
-      rows: Array.isArray(result) ? result as T[] : [],
-      rowCount: Array.isArray(result) ? result.length : 0
-    };
-  } catch (error) {
-    console.error('Database query error:', error);
-    console.error('Query:', text);
-    console.error('Params:', params);
+    // Neon returns arrays directly, wrap in QueryResult format
+    const rows = Array.isArray(result) ? result as T[] : [];
+    const rowCount = rows.length;
     
-    // Fall back to mock data if database fails
-    console.warn('Database query failed, falling back to mock data');
-    return mockQueryResults<T>(text, params);
+    console.log(`[DB] Query completed: ${rowCount} rows returned`);
+    
+    return {
+      rows,
+      rowCount
+    };
+  } catch (error: any) {
+    console.error('[DB] Database query failed:', {
+      error: error.message,
+      code: error.code,
+      query: text.substring(0, 200),
+      params: params
+    });
+    
+    // Re-throw the error - no fallbacks or mock data
+    throw new Error(`Database query failed: ${error.message}`);
   }
 }
 
-// Enhanced mock data for development
-function mockQueryResults<T>(text: string, params: any[] = []): QueryResult<T> {
-  const lowerText = text.toLowerCase();
-  
-  // Mock game instances
-  if (lowerText.includes('select') && lowerText.includes('game_instances')) {
-    const mockGames = [
-      {
-        id: 1,
-        game_session_id: 1,
-        start_time: new Date().toISOString(),
-        status: 'active',
-        map_seed: 12345,
-        current_turn: 5,
-        max_players: 6,
-        player_count: '4'
-      },
-      {
-        id: 2,
-        game_session_id: 1,
-        start_time: new Date(Date.now() - 300000).toISOString(),
-        status: 'pending',
-        map_seed: 67890,
-        current_turn: 0,
-        max_players: 6,
-        player_count: '2'
-      }
-    ];
+/**
+ * Execute a transaction with multiple queries
+ * Neon supports transactions in serverless mode
+ */
+export async function transaction<T>(callback: (sql: typeof query) => Promise<T>): Promise<T> {
+  try {
+    console.log('[DB] Starting transaction');
     
-    return {
-      rows: mockGames as unknown as T[],
-      rowCount: mockGames.length
-    };
-  }
-  
-  // Mock game sessions
-  if (lowerText.includes('select') && lowerText.includes('game_sessions')) {
-    return {
-      rows: [{ id: 1, season_id: 1, status: 'active' }] as unknown as T[],
-      rowCount: 1
-    };
-  }
-  
-  // Mock players
-  if (lowerText.includes('select') && lowerText.includes('players')) {
-    const mockPlayers = [
-      {
-        id: 1,
-        wallet_address: '0x1234567890123456789012345678901234567890',
-        username: 'Player 1',
-        gas_units: 85,
-        territories_count: 3
-      },
-      {
-        id: 2,
-        wallet_address: '0x0987654321098765432109876543210987654321',
-        username: 'Player 2',
-        gas_units: 70,
-        territories_count: 2
-      }
-    ];
+    // For Neon, we can use the sql function directly in a transaction-like manner
+    // Neon handles connection pooling and transactions automatically
+    const result = await callback(query);
     
-    return {
-      rows: mockPlayers as unknown as T[],
-      rowCount: mockPlayers.length
-    };
+    console.log('[DB] Transaction completed successfully');
+    return result;
+  } catch (error: any) {
+    console.error('[DB] Transaction failed:', error.message);
+    throw new Error(`Transaction failed: ${error.message}`);
   }
-  
-  // Mock game tiles/territories
-  if (lowerText.includes('select') && lowerText.includes('game_tiles')) {
-    const mockTiles = [];
-    for (let y = 0; y < 8; y++) {
-      for (let x = 0; x < 12; x++) {
-        mockTiles.push({
-          id: y * 12 + x + 1,
-          game_instance_id: 1,
-          x_coord: x,
-          y_coord: y,
-          owner_id: Math.random() > 0.7 ? (Math.random() > 0.5 ? 1 : 2) : null,
-          gas_type: Math.random() > 0.5 ? 'green' : (Math.random() > 0.5 ? 'yellow' : 'toxic'),
-          defense_bonus: 0,
-          is_gas_vent: Math.random() > 0.9
-        });
-      }
-    }
+}
+
+/**
+ * Helper function to ensure database tables exist
+ * This should be called during application startup
+ */
+export async function ensureTablesExist(): Promise<void> {
+  const schemas = [
+    `CREATE TABLE IF NOT EXISTS game_sessions (
+      id SERIAL PRIMARY KEY,
+      season_id INTEGER NOT NULL DEFAULT 1,
+      start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      end_time TIMESTAMP,
+      max_players INTEGER DEFAULT 500,
+      status VARCHAR(20) DEFAULT 'active'
+    )`,
     
-    return {
-      rows: mockTiles as unknown as T[],
-      rowCount: mockTiles.length
-    };
+    `CREATE TABLE IF NOT EXISTS game_instances (
+      id SERIAL PRIMARY KEY,
+      game_session_id INTEGER REFERENCES game_sessions(id),
+      start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      end_time TIMESTAMP,
+      status VARCHAR(20) DEFAULT 'pending',
+      map_seed INTEGER DEFAULT 0,
+      current_turn INTEGER DEFAULT 0,
+      max_players INTEGER DEFAULT 6,
+      game_duration INTEGER DEFAULT 30
+    )`,
+    
+    `CREATE TABLE IF NOT EXISTS players (
+      id SERIAL PRIMARY KEY,
+      wallet_address VARCHAR(42) NOT NULL UNIQUE,
+      nft_token_id INTEGER,
+      username VARCHAR(50),
+      last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      is_bot BOOLEAN DEFAULT FALSE
+    )`,
+    
+    `CREATE TABLE IF NOT EXISTS player_game_states (
+      id SERIAL PRIMARY KEY,
+      game_instance_id INTEGER REFERENCES game_instances(id),
+      player_id INTEGER REFERENCES players(id),
+      gas_units INTEGER DEFAULT 100,
+      last_action_time TIMESTAMP,
+      last_gas_regen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      territories_count INTEGER DEFAULT 0,
+      UNIQUE(game_instance_id, player_id)
+    )`,
+    
+    `CREATE TABLE IF NOT EXISTS game_tiles (
+      id SERIAL PRIMARY KEY,
+      game_instance_id INTEGER REFERENCES game_instances(id),
+      x_coord INTEGER NOT NULL,
+      y_coord INTEGER NOT NULL,
+      owner_id INTEGER REFERENCES players(id),
+      gas_type VARCHAR(20),
+      defense_bonus INTEGER DEFAULT 0,
+      defense_bonus_until TIMESTAMP,
+      is_gas_vent BOOLEAN DEFAULT FALSE,
+      last_action_time TIMESTAMP,
+      UNIQUE(game_instance_id, x_coord, y_coord)
+    )`,
+    
+    `CREATE TABLE IF NOT EXISTS player_actions (
+      id SERIAL PRIMARY KEY,
+      game_instance_id INTEGER REFERENCES game_instances(id),
+      player_id INTEGER REFERENCES players(id),
+      action_type VARCHAR(20) NOT NULL,
+      target_x INTEGER,
+      target_y INTEGER,
+      gas_spent INTEGER,
+      result VARCHAR(20),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    
+    `CREATE TABLE IF NOT EXISTS match_results (
+      id SERIAL PRIMARY KEY,
+      game_instance_id INTEGER REFERENCES game_instances(id),
+      player_id INTEGER REFERENCES players(id),
+      placement INTEGER,
+      territories_final INTEGER,
+      tokens_earned INTEGER DEFAULT 0,
+      xp_earned INTEGER DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`
+  ];
+
+  for (const schema of schemas) {
+    await query(schema);
   }
-  
-  // Mock inserts
-  if (lowerText.includes('insert')) {
-    return {
-      rows: [{ id: Math.floor(Math.random() * 1000) + 1 }] as unknown as T[],
-      rowCount: 1
-    };
+
+  // Create indexes for performance
+  const indexes = [
+    'CREATE INDEX IF NOT EXISTS idx_game_tiles_game_coords ON game_tiles(game_instance_id, x_coord, y_coord)',
+    'CREATE INDEX IF NOT EXISTS idx_game_tiles_owner ON game_tiles(owner_id)',
+    'CREATE INDEX IF NOT EXISTS idx_player_game_states_game ON player_game_states(game_instance_id)',
+    'CREATE INDEX IF NOT EXISTS idx_player_actions_game ON player_actions(game_instance_id)',
+    'CREATE INDEX IF NOT EXISTS idx_player_actions_created ON player_actions(created_at)'
+  ];
+
+  for (const index of indexes) {
+    await query(index);
   }
-  
-  // Mock updates
-  if (lowerText.includes('update')) {
-    return {
-      rows: [] as T[],
-      rowCount: 1
-    };
-  }
-  
-  // Default mock response
-  return {
-    rows: [] as T[],
-    rowCount: 0
-  };
 }
 
 // Helper for hexagonal grid coordinate calculations
 export function getAdjacentCoords(x: number, y: number): Array<{x: number, y: number}> {
   const isEvenRow = y % 2 === 0;
   
-  // Different adjacency patterns based on even/odd rows
+  // Different adjacency patterns based on even/odd rows for hexagonal grid
   if (isEvenRow) {
     return [
       { x: x-1, y: y },    // left

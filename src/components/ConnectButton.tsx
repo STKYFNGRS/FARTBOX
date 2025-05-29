@@ -2,41 +2,95 @@
 
 import { useAppKit } from '@reown/appkit/react';
 import { useAccount, useEnsName, useEnsAvatar } from 'wagmi';
-import { normalize } from 'viem/ens';
+import { base } from 'wagmi/chains';
+import { useState, useEffect } from 'react';
 
 interface ConnectButtonProps {
   className?: string;
 }
 
 export function ConnectButton({ className }: ConnectButtonProps) {
+  // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
   const { open } = useAppKit();
   const { address, isConnected } = useAccount();
   
-  // Get ENS name and avatar with proper error handling
-  const { data: ensName, isError: ensNameError } = useEnsName({
+  // ALL STATE HOOKS
+  const [mounted, setMounted] = useState(false);
+  const [displayName, setDisplayName] = useState<string>('Connect Wallet');
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  
+  // ALL WAGMI HOOKS
+  // Get ENS name with Base network configuration
+  const { data: ensName, isError: ensNameError, isLoading: ensNameLoading } = useEnsName({
     address: address,
-    chainId: 1, // Mainnet for ENS
+    chainId: base.id,
     query: {
-      enabled: !!address && isConnected,
+      enabled: !!address && isConnected && mounted,
+      retry: 1,
+      retryDelay: 1000,
+      refetchOnWindowFocus: false,
+      staleTime: 5 * 60 * 1000, // Cache for 5 minutes
     },
   });
   
+  // Get ENS avatar with Base network configuration
   const { data: ensAvatar, isError: ensAvatarError } = useEnsAvatar({
-    name: ensName ? normalize(ensName) : undefined,
-    chainId: 1,
+    name: ensName || undefined,
+    chainId: base.id,
     query: {
-      enabled: !!ensName && !ensNameError,
+      enabled: !!ensName && !ensNameError && mounted,
+      retry: 1,
+      retryDelay: 1000,
+      refetchOnWindowFocus: false,
+      staleTime: 5 * 60 * 1000, // Cache for 5 minutes
     },
   });
 
+  // ALL EFFECT HOOKS
+  // Ensure component is mounted
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  
+  // Update display name and avatar when data changes
+  useEffect(() => {
+    if (!mounted) return;
+    
+    if (isConnected && address) {
+      // If ENS name is still loading, show loading state
+      if (ensNameLoading) {
+        setDisplayName('Loading...');
+      } else if (ensName && !ensNameError) {
+        setDisplayName(ensName);
+      } else {
+        setDisplayName(formatAddress(address));
+      }
+      
+      if (ensAvatar && !ensAvatarError) {
+        setAvatarUrl(ensAvatar);
+      } else {
+        setAvatarUrl(null);
+      }
+    } else {
+      setDisplayName('Connect Wallet');
+      setAvatarUrl(null);
+    }
+  }, [mounted, isConnected, address, ensName, ensNameError, ensNameLoading, ensAvatar, ensAvatarError]);
+
+  // FUNCTION DEFINITIONS
   const formatAddress = (addr: string) => {
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
   };
 
-  // Use ENS name if available and no error, otherwise use formatted address
-  const displayName = ensName && !ensNameError 
-    ? ensName 
-    : (address ? formatAddress(address) : 'Connect Wallet');
+  // NOW SAFE FOR CONDITIONAL RETURNS
+  // Show loading state during SSR
+  if (!mounted) {
+    return (
+      <button className={className}>
+        Connect Wallet
+      </button>
+    );
+  }
 
   if (isConnected && address) {
     return (
@@ -44,14 +98,15 @@ export function ConnectButton({ className }: ConnectButtonProps) {
         onClick={() => open()}
         className={`flex items-center gap-2 ${className}`}
       >
-        {ensAvatar && !ensAvatarError && (
+        {avatarUrl && (
           <img 
-            src={ensAvatar} 
+            src={avatarUrl} 
             alt="ENS Avatar" 
             className="w-6 h-6 rounded-full"
             onError={(e) => {
               // Hide image if it fails to load
               e.currentTarget.style.display = 'none';
+              setAvatarUrl(null);
             }}
           />
         )}

@@ -67,6 +67,10 @@ export async function POST(
     const now = new Date();
     const lastActionTime = playerState.last_action_time ? new Date(playerState.last_action_time) : null;
     
+    console.log(`Cooldown check for player ${playerId}:`);
+    console.log(`  Current time: ${now.toISOString()}`);
+    console.log(`  Last action time: ${lastActionTime ? lastActionTime.toISOString() : 'never'}`);
+    
     if (lastActionTime) {
       const timeSinceLastAction = now.getTime() - lastActionTime.getTime();
       
@@ -79,9 +83,24 @@ export async function POST(
         requiredCooldown = 30 * 1000; // 30 seconds
       }
       
-      if (timeSinceLastAction < requiredCooldown) {
+      console.log(`  Time since last action: ${timeSinceLastAction}ms (${Math.floor(timeSinceLastAction / 1000)}s)`);
+      console.log(`  Required cooldown: ${requiredCooldown}ms (${Math.floor(requiredCooldown / 1000)}s)`);
+      
+      // Safety check - if last action time is in the future or more than 1 hour ago, reset it
+      if (timeSinceLastAction < 0 || timeSinceLastAction > 3600000) {
+        console.log(`  FIXING: Unreasonable cooldown detected (${Math.floor(timeSinceLastAction / 1000)}s), resetting player's last action time`);
+        await query(`
+          UPDATE player_game_states 
+          SET last_action_time = NULL
+          WHERE game_instance_id = $1 AND player_id = $2
+        `, [gameId, playerId]);
+        // Allow action to proceed
+      } else if (timeSinceLastAction < requiredCooldown) {
+        const remainingCooldown = Math.ceil((requiredCooldown - timeSinceLastAction) / 1000);
+        console.log(`  Cooldown remaining: ${remainingCooldown}s`);
+        
         return NextResponse.json(
-          { error: `Action on cooldown for ${Math.ceil((requiredCooldown - timeSinceLastAction) / 1000)} more seconds` },
+          { error: `Action on cooldown for ${remainingCooldown} more seconds` },
           { status: 400 }
         );
       }
@@ -95,6 +114,100 @@ export async function POST(
     `, [gameId, playerId]);
     
     const playerTiles = playerTilesResult.rows;
+    
+    console.log(`Player ${playerId} has ${playerTiles.length} territories in game ${gameId}`);
+    
+    // If player has no territories and it's an emit action on an unclaimed tile, allow it (starting move)
+    if (playerTiles.length === 0 && actionType === 'emit') {
+      console.log(`Player ${playerId} making first move - allowing direct territory claim`);
+      
+      // Get target tile info
+      const targetTileResult = await query<GameTile>(`
+        SELECT 
+          id, 
+          owner_id, 
+          gas_type, 
+          defense_bonus,
+          defense_bonus_until,
+          is_gas_vent
+        FROM 
+          game_tiles 
+        WHERE 
+          game_instance_id = $1 AND 
+          x_coord = $2 AND 
+          y_coord = $3
+      `, [gameId, parseInt(targetX), parseInt(targetY)]);
+      
+      if (targetTileResult.rowCount === 0) {
+        return NextResponse.json(
+          { error: 'Invalid target tile' },
+          { status: 400 }
+        );
+      }
+      
+      const targetTile = targetTileResult.rows[0];
+      
+      // Only allow claiming unclaimed, non-gas-vent tiles for first move
+      if (!targetTile.owner_id && !targetTile.is_gas_vent) {
+        try {
+          await query('BEGIN');
+          
+          // Claim the territory
+          await query(`
+            UPDATE game_tiles 
+            SET 
+              owner_id = $1, 
+              gas_type = 'green'
+            WHERE 
+              id = $2
+          `, [playerId, targetTile.id]);
+          
+          // Update player's territory count
+          await query(`
+            UPDATE player_game_states 
+            SET territories_count = territories_count + 1 
+            WHERE game_instance_id = $1 AND player_id = $2
+          `, [gameId, playerId]);
+          
+          // Deduct gas and update last action time
+          await query(`
+            UPDATE player_game_states 
+            SET 
+              gas_units = gas_units - $1,
+              last_action_time = NOW()
+            WHERE 
+              game_instance_id = $2 AND 
+              player_id = $3
+          `, [gasSpent, gameId, playerId]);
+          
+          // Log the action
+          await query(`
+            INSERT INTO player_actions (game_instance_id, player_id, action_type, target_x, target_y, gas_spent)
+            VALUES ($1, $2, $3, $4, $5, $6)
+          `, [gameId, playerId, actionType, parseInt(targetX), parseInt(targetY), gasSpent]);
+          
+          await query('COMMIT');
+          
+          return NextResponse.json({
+            success: true,
+            message: 'First territory claimed successfully!'
+          });
+          
+        } catch (error) {
+          await query('ROLLBACK');
+          console.error('Error processing first move:', error);
+          return NextResponse.json(
+            { error: 'Failed to claim territory' },
+            { status: 500 }
+          );
+        }
+      } else {
+        return NextResponse.json(
+          { error: 'Can only claim empty territories for your first move' },
+          { status: 400 }
+        );
+      }
+    }
     
     // Get target tile info
     const targetTileResult = await query<GameTile>(`
@@ -386,17 +499,36 @@ export async function POST(
             ($1, $2, $3, $4, $5, $6, $7)
         `, [gameId, playerId, actionType, parseInt(targetX), parseInt(targetY), gasSpent, actionResult ? 'success' : 'fail']);
         
-        // Check for victory condition (20+ territories)
+        // Check for victory condition (15+ territories for balanced gameplay on 96-tile map)
         const victoryCheck = await query<{territories_count: number}>(`
           SELECT territories_count 
           FROM player_game_states 
           WHERE game_instance_id = $1 AND player_id = $2
         `, [gameId, playerId]);
         
-        if (victoryCheck.rows[0]?.territories_count >= 20) {
-          // Player has achieved dominance victory
+        if (victoryCheck.rows[0]?.territories_count >= 15) {
+          // Player has achieved dominance victory (15+ territories out of 96 total)
           await endGame(parseInt(gameId), playerId, 'dominance');
-          message += ' You have achieved dominance victory!';
+          message += ' 🎉 VICTORY! You have achieved territorial dominance!';
+        }
+        
+        // Add gas vent bonus if player controls gas vents
+        const gasVentBonus = await query<{count: string}>(`
+          SELECT COUNT(*) as count
+          FROM game_tiles 
+          WHERE game_instance_id = $1 AND owner_id = $2 AND is_gas_vent = true
+        `, [gameId, playerId]);
+        
+        const ventCount = parseInt(gasVentBonus.rows[0]?.count || '0');
+        if (ventCount > 0) {
+          const bonusGas = ventCount * 5; // 5 bonus gas per vent controlled
+          await query(`
+            UPDATE player_game_states 
+            SET gas_units = LEAST(gas_units + $1, 200)
+            WHERE game_instance_id = $2 AND player_id = $3
+          `, [bonusGas, gameId, playerId]);
+          
+          message += ` +${bonusGas} bonus gas from ${ventCount} gas vent${ventCount > 1 ? 's' : ''}!`;
         }
         
         await query('COMMIT');

@@ -4,7 +4,7 @@ A strategic territory control game built on Web3 technology, where players compe
 
 ## ✨ Features
 
-### �� Core Gameplay
+### 🎯 Core Gameplay
 - **Territory Control**: Claim and defend hexagonal tiles on the game board
 - **Gas Types**: Choose from Green (balanced), Yellow (offensive), or Toxic (defensive) gas
 - **Three Action Types**: 
@@ -29,7 +29,6 @@ A strategic territory control game built on Web3 technology, where players compe
 ### Prerequisites
 - Node.js 18+ and npm
 - A Web3 wallet (MetaMask recommended)
-- NeonDB database connection (for backend)
 
 ### Setup
 1. **Clone and Install**
@@ -40,17 +39,13 @@ A strategic territory control game built on Web3 technology, where players compe
    ```
 
 2. **Environment Setup**
-   Create `.env.local` with:
-   ```env
-   DATABASE_URL=your_neon_db_connection_string
-   NEXT_PUBLIC_PROJECT_ID=your_reown_project_id
-   ```
+   - Copy `env.example` to `.env.local`
+   - Configure your environment variables
 
-3. **Initialize Database**
+3. **Start Development**
    ```bash
    npm run dev
    ```
-   Then visit: `http://localhost:3000/api/admin/init-db` (POST request) to set up tables
 
 4. **Start Playing**
    - Connect your wallet
@@ -87,7 +82,7 @@ A strategic territory control game built on Web3 technology, where players compe
 - **Frontend**: Next.js 14 with TypeScript
 - **Styling**: Tailwind CSS with custom animations
 - **Web3**: Wagmi + Reown AppKit for wallet connections
-- **Database**: NeonDB (PostgreSQL)
+- **Database**: Serverless PostgreSQL
 - **Smart Contracts**: Solidity (coming soon)
 - **Deployment**: Vercel-ready
 

@@ -36,7 +36,7 @@ export async function startGame(gameId: number | string) {
     
     console.log(`Found ${players.length} players, includes bots: ${hasBots}`);
     
-    // Initialize map with gas vents (3 vents)
+    // Initialize map with proper 8x12 grid and strategic gas vents
     const mapSeed = Math.floor(Math.random() * 1000000);
     console.log(`Map seed: ${mapSeed}`);
     
@@ -48,26 +48,21 @@ export async function startGame(gameId: number | string) {
       return Math.floor((x - Math.floor(x)) * max);
     };
     
-    console.log('Creating gas vents');
-    // Create gas vents
+    console.log('Creating strategic gas vents (5 vents for 8x12 map)');
+    // Create 5 gas vents strategically placed for 8x12 map
     const gasVents: Array<{x: number, y: number}> = [];
-    for (let i = 0; i < 3; i++) {
-      let x: number, y: number;
-      let attempts = 0;
-      do {
-        x = seededRandom(7);
-        y = seededRandom(7);
-        attempts++;
-        if (attempts > 50) {
-          // Fallback to ensure we don't get stuck
-          x = i * 2;
-          y = i * 2;
-          break;
-        }
-      } while (gasVents.some(vent => vent.x === x && vent.y === y));
-      
-      gasVents.push({ x, y });
-      console.log(`Creating gas vent at (${x}, ${y})`);
+    const ventPositions = [
+      { x: 2, y: 2 },   // Top-left quadrant
+      { x: 9, y: 2 },   // Top-right quadrant  
+      { x: 5, y: 4 },   // Center
+      { x: 2, y: 6 },   // Bottom-left quadrant
+      { x: 9, y: 6 }    // Bottom-right quadrant
+    ];
+    
+    for (let i = 0; i < 5; i++) {
+      const vent = ventPositions[i];
+      gasVents.push(vent);
+      console.log(`Creating gas vent at (${vent.x}, ${vent.y})`);
       
       try {
         await query(`
@@ -75,7 +70,7 @@ export async function startGame(gameId: number | string) {
             (game_instance_id, x_coord, y_coord, is_gas_vent) 
           VALUES 
             ($1, $2, $3, $4)
-        `, [gameIdNum, x, y, true]);
+        `, [gameIdNum, vent.x, vent.y, true]);
         console.log(`Gas vent ${i + 1} created successfully`);
       } catch (ventError) {
         console.error(`Error creating gas vent ${i + 1}:`, ventError);
@@ -83,8 +78,8 @@ export async function startGame(gameId: number | string) {
       }
     }
     
-    console.log('Assigning initial territories to players');
-    // Assign initial territories to players (3 per player)
+    console.log('Assigning initial territories to players (3 per player)');
+    // Assign initial territories to players - distributed across the 8x12 map
     const assignedTiles = [...gasVents];
     
     for (let i = 0; i < players.length; i++) {
@@ -92,20 +87,25 @@ export async function startGame(gameId: number | string) {
       const gasType = ['green', 'yellow', 'toxic'][i % 3]; // Distribute gas types evenly
       console.log(`Assigning territories to player ${player} with ${gasType} gas type`);
       
+      // Give each player 3 starting territories spread out
+      const startPositions = [
+        // Distribute players around the edges
+        { x: 1 + (i * 2) % 10, y: 1 },
+        { x: 1 + (i * 2) % 10, y: 3 },
+        { x: 1 + (i * 2) % 10, y: 5 }
+      ];
+      
       for (let j = 0; j < 3; j++) {
-        let x: number, y: number;
+        let x = startPositions[j].x;
+        let y = startPositions[j].y;
+        
+        // Make sure we don't overlap with gas vents or other assigned tiles
         let tries = 0;
-        do {
-          x = seededRandom(7);
-          y = seededRandom(7);
+        while (assignedTiles.some(tile => tile.x === x && tile.y === y) && tries < 20) {
+          x = seededRandom(12);
+          y = seededRandom(8);
           tries++;
-          if (tries > 50) {
-            // Fallback to ensure we don't get stuck
-            x = (i * 3 + j) % 7;
-            y = Math.floor((i * 3 + j) / 7);
-            break;
-          }
-        } while (assignedTiles.some(tile => tile.x === x && tile.y === y));
+        }
         
         assignedTiles.push({ x, y });
         console.log(`Creating territory for player ${player} at (${x}, ${y})`);
@@ -140,11 +140,11 @@ export async function startGame(gameId: number | string) {
       }
     }
     
-    console.log('Creating remaining empty tiles');
-    // Create remaining empty tiles
+    console.log('Creating remaining empty tiles for 8x12 grid');
+    // Create remaining empty tiles (8x12 = 96 total tiles)
     let emptyTilesCreated = 0;
-    for (let x = 0; x < 7; x++) {
-      for (let y = 0; y < 7; y++) {
+    for (let x = 0; x < 12; x++) {
+      for (let y = 0; y < 8; y++) {
         if (!assignedTiles.some(tile => tile.x === x && tile.y === y)) {
           try {
             await query(`
@@ -163,38 +163,22 @@ export async function startGame(gameId: number | string) {
     }
     console.log(`Created ${emptyTilesCreated} empty tiles`);
     
-    // If game has bots, schedule their actions
+    // If game has bots, schedule their actions to start immediately
     if (hasBots) {
       console.log(`Game ${gameIdNum} has bots - will schedule bot actions`);
-      // In a real implementation, you would set up a system to have bots take actions
-      // This could be a serverless cron job, a worker, or a scheduled task
+      // Start AI actions immediately
+      setTimeout(() => {
+        fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/games/${gameIdNum}/ai-actions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        }).catch(error => console.error('Failed to start AI actions:', error));
+      }, 5000); // Start AI after 5 seconds
     }
     
-    console.log(`Game ${gameIdNum} started successfully with ${assignedTiles.length} total tiles`);
+    console.log(`Game ${gameIdNum} started successfully with ${assignedTiles.length} total tiles (${96 - emptyTilesCreated} assigned, ${emptyTilesCreated} empty)`);
     return true;
   } catch (error) {
     console.error('Error starting game:', error);
-    // More detailed error logging
-    if (error instanceof Error) {
-      console.error('Error details:', {
-        message: error.message,
-        stack: error.stack,
-        name: error.name
-      });
-    }
-    
-    // Set game status back to pending if there was an error
-    try {
-      await query(`
-        UPDATE game_instances 
-        SET status = 'pending' 
-        WHERE id = $1
-      `, [gameIdNum]);
-      console.log(`Game ${gameIdNum} status reverted to pending due to initialization error`);
-    } catch (revertError) {
-      console.error('Error reverting game status:', revertError);
-    }
-    
-    return false;
+    throw error;
   }
 } 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useAccount } from 'wagmi';
 
 import GameHeader from '../../../components/GameHeader';
@@ -29,6 +29,15 @@ interface GameState {
 }
 
 export default function GamePage() {
+  // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
+  const { address, isConnected } = useAccount();
+  const router = useRouter();
+  const params = useParams();
+  const searchParams = useSearchParams();
+  const gameId = params.id as string;
+  
+  // ALL STATE HOOKS
+  const [mounted, setMounted] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('help');
   const [gameData, setGameData] = useState<GameData | null>(null);
@@ -38,21 +47,12 @@ export default function GamePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [gasClouds, setGasClouds] = useState<{ x: number; y: number; size: number; color: string }[]>([]);
-  const [isSpectating, setIsSpectating] = useState(false);
   const [actionResult, setActionResult] = useState<{success: boolean, message: string, timestamp: number} | null>(null);
   
-  const { address, isConnected } = useAccount();
-  const router = useRouter();
-  const params = useParams();
-  const gameId = params.id as string;
-  
   // Check if in spectate mode
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    setIsSpectating(urlParams.get('spectate') === 'true');
-  }, []);
+  const isSpectating = searchParams?.get('spectate') === 'true';
   
-  // Authenticate player and get player ID
+  // ALL CALLBACK HOOKS
   const authenticatePlayer = useCallback(async () => {
     if (!address) return;
     
@@ -119,12 +119,10 @@ export default function GamePage() {
     }
   }, [gameId, playerId, isSpectating]);
   
-  // Refresh game state after actions
   const refreshGameState = useCallback(async () => {
     await fetchGameData();
   }, [fetchGameData]);
   
-  // Handle tile actions from GameBoard
   const handleTileAction = useCallback(async (x: number, y: number, actionType: string) => {
     if (!playerId || !gameId) return;
     
@@ -176,6 +174,44 @@ export default function GamePage() {
     }
   }, [playerId, gameId, refreshGameState]);
   
+  // Calculate time remaining if game has duration
+  const getTimeRemaining = () => {
+    if (!gameData?.game?.start_time || !gameData?.game?.game_duration) {
+      return null;
+    }
+    
+    const startTime = new Date(gameData.game.start_time).getTime();
+    const duration = gameData.game.game_duration * 60 * 1000; // Convert minutes to milliseconds
+    const endTime = startTime + duration;
+    const now = Date.now();
+    const remaining = endTime - now;
+    
+    if (remaining <= 0) {
+      // Game time expired - end the game
+      if (gameData.game.status === 'active') {
+        fetch(`/api/games/${gameId}/end-game`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: 'time_expired' })
+        }).catch(error => console.error('Error ending game:', error));
+      }
+      return 'GAME OVER';
+    }
+    
+    const minutes = Math.floor(remaining / 60000);
+    const seconds = Math.floor((remaining % 60000) / 1000);
+    
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+  
+  const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
+  
+  // ALL EFFECT HOOKS
+  // Ensure component is mounted to prevent hydration issues
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  
   useEffect(() => {
     // Redirect to home if not connected and not spectating
     if (!isConnected && !isSpectating) {
@@ -207,25 +243,77 @@ export default function GamePage() {
   
   // Set up real-time polling for game updates
   useEffect(() => {
-    if (!gameData || gameData.status !== 'active') return;
+    if (!mounted) return;
     
-    const interval = setInterval(() => {
-      refreshGameState();
-    }, 5000); // Poll every 5 seconds during active games
-    
+    const interval = setInterval(fetchGameData, 3000); // Poll every 3 seconds
     return () => clearInterval(interval);
-  }, [gameData?.status, refreshGameState]);
+  }, [mounted, fetchGameData]);
   
-  const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
+  // Schedule AI actions for active games with bots
+  useEffect(() => {
+    if (!mounted || !gameData?.game?.status || gameData.game.status !== 'active') return;
+    
+    const hasAI = gameData.players?.some(p => p.is_bot);
+    if (!hasAI) return;
+    
+    const scheduleAIActions = () => {
+      fetch(`/api/games/${gameId}/ai-actions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.actionsPerformed > 0) {
+          console.log(`🤖 AI performed ${data.actionsPerformed} actions`);
+          // Refresh game data after AI actions
+          setTimeout(fetchGameData, 1000);
+        }
+      })
+      .catch(error => console.error('Error triggering AI actions:', error));
+    };
+    
+    // Schedule AI actions every 10 seconds for more activity
+    const aiInterval = setInterval(scheduleAIActions, 10000);
+    
+    // Initial AI action after a short delay
+    const initialTimeout = setTimeout(scheduleAIActions, 3000);
+    
+    return () => {
+      clearInterval(aiInterval);
+      clearTimeout(initialTimeout);
+    };
+  }, [mounted, gameData?.game?.status, gameData?.players, gameId, fetchGameData]);
   
-  if (loading) {
+  // Auto-clear action result after 5 seconds
+  useEffect(() => {
+    if (actionResult) {
+      const timer = setTimeout(() => {
+        setActionResult(null);
+      }, 5000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [actionResult]);
+  
+  // Check for game completion and redirect
+  useEffect(() => {
+    if (!mounted || !gameData?.game) return;
+    
+    if (gameData.game.status === 'completed') {
+      // Show completion message and redirect after delay
+      setTimeout(() => {
+        router.push('/lobby');
+      }, 5000);
+    }
+  }, [mounted, gameData?.game?.status, router]);
+  
+  // NOW SAFE FOR CONDITIONAL RETURNS AFTER ALL HOOKS
+  // Show loading state during SSR
+  if (!mounted) {
     return (
-      <main className="flex flex-col h-screen overflow-hidden gas-container">
-        <GameHeader isWalletConnected={isConnected} />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-2xl text-green-400">Loading game data...</div>
-        </div>
-      </main>
+      <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black flex items-center justify-center">
+        <div className="text-green-400 font-bold text-xl">Loading game...</div>
+      </div>
     );
   }
   
@@ -278,26 +366,63 @@ export default function GamePage() {
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
         </button>
+        
         <h1 className="text-xl font-semibold text-green-400">{gameData.name}</h1>
+        
         {isSpectating && (
-          <div className="ml-4 px-2 py-1 rounded text-sm bg-blue-700/50 text-blue-300">
-            Spectating
+          <div className="ml-4 px-3 py-1 rounded text-sm bg-blue-700/50 text-blue-300 border border-blue-500/30">
+            👁️ Spectating
           </div>
         )}
-        <div className={`ml-4 px-2 py-1 rounded text-sm ${
-          gameData.status === 'active' ? 'bg-green-700/50 text-green-300' :
-          gameData.status === 'pending' ? 'bg-yellow-700/50 text-yellow-300' :
-          'bg-gray-700/50 text-gray-300'
+        
+        <div className={`ml-4 px-3 py-1 rounded text-sm font-semibold ${
+          gameData.status === 'active' ? 'bg-green-700/50 text-green-300 border border-green-500/30' :
+          gameData.status === 'pending' ? 'bg-yellow-700/50 text-yellow-300 border border-yellow-500/30' :
+          'bg-gray-700/50 text-gray-300 border border-gray-500/30'
         }`}>
-          {gameData.status === 'pending' ? 'Waiting for Players' : 
-           gameData.status === 'active' ? 'In Progress' : 'Completed'}
+          {gameData.status === 'pending' ? '⏳ Waiting for Players' : 
+           gameData.status === 'active' ? '🎮 Game Active' : '✅ Completed'}
         </div>
-        <div className="ml-4 text-sm text-gray-400">
-          Players: {gameData.players.length}
+        
+        <div className="ml-4 text-sm text-gray-400 flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="m22 21-3-3m0 0a6 6 0 1 0-8 0l3 3"/>
+          </svg>
+          <span>{gameData.players.length} Players</span>
         </div>
-        {gameState && (
-          <div className="ml-auto text-sm text-green-400">
-            Territories: {gameState.territoriesCount}
+        
+        {/* Game Timer */}
+        {gameData.status === 'active' && getTimeRemaining() && (
+          <div className="ml-4 px-3 py-1 rounded text-sm bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 font-mono">
+            <span className="flex items-center gap-1">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12,6 12,12 16,14"/>
+              </svg>
+              {getTimeRemaining()}
+            </span>
+          </div>
+        )}
+        
+        {/* Player Status */}
+        {gameState && !isSpectating && (
+          <div className="ml-auto flex items-center gap-4 text-sm">
+            <div className="text-green-400 flex items-center gap-1">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+              </svg>
+              <span className="font-semibold">{gameState.territoriesCount}</span>
+              <span className="text-gray-400">territories</span>
+            </div>
+            <div className="text-blue-400 flex items-center gap-1">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+              </svg>
+              <span className="font-semibold">{gameState.gasUnits}</span>
+              <span className="text-gray-400">gas units</span>
+            </div>
           </div>
         )}
       </div>
@@ -335,6 +460,30 @@ export default function GamePage() {
           gameState={gameState || undefined}
           actionResult={actionResult}
         />
+        
+        {/* Action Result Display */}
+        {actionResult && (
+          <div className={`fixed top-24 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded-lg border font-semibold transition-all duration-500 ${
+            actionResult.success 
+              ? 'bg-green-500/20 text-green-400 border-green-500/30' 
+              : 'bg-red-500/20 text-red-400 border-red-500/30'
+          }`}>
+            <div className="flex items-center gap-2">
+              {actionResult.success ? (
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 6L9 17l-5-5"/>
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="15" y1="9" x2="9" y2="15"/>
+                  <line x1="9" y1="9" x2="15" y2="15"/>
+                </svg>
+              )}
+              <span>{actionResult.message}</span>
+            </div>
+          </div>
+        )}
       </div>
       
       {isConnected && !isSpectating && gameData?.status === 'active' && (

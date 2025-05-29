@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react';
 
 export interface GameBoardProps {
   isWalletConnected: boolean;
-  gameId?: string;
-  territories?: any[];
+  gameId: string;
+  territories: any[];
   playerId?: number;
   selectedAction?: string;
-  onTileAction?: (x: number, y: number, action: string) => void;
+  onTileAction: (x: number, y: number, actionType: string) => void;
   gameState?: {
     gasUnits: number;
-    lastActionTime?: string;
+    territoriesCount: number;
   };
   actionResult?: {
     success: boolean;
@@ -27,92 +27,166 @@ interface GridCell {
   y: number;
 }
 
-const GameBoard = ({ 
+// Player color mapping with CSS custom properties
+const PLAYER_COLORS = {
+  1: { 
+    bg: '#22c55e', 
+    bgOpacity: 'rgba(34, 197, 94, 0.3)', 
+    bgOpacityStrong: 'rgba(34, 197, 94, 0.5)',
+    border: '#4ade80', 
+    text: '#4ade80', 
+    name: 'Green' 
+  },
+  2: { 
+    bg: '#eab308', 
+    bgOpacity: 'rgba(234, 179, 8, 0.3)', 
+    bgOpacityStrong: 'rgba(234, 179, 8, 0.5)',
+    border: '#facc15', 
+    text: '#facc15', 
+    name: 'Yellow' 
+  },
+  3: { 
+    bg: '#8b5cf6', 
+    bgOpacity: 'rgba(139, 92, 246, 0.3)', 
+    bgOpacityStrong: 'rgba(139, 92, 246, 0.5)',
+    border: '#a855f7', 
+    text: '#a855f7', 
+    name: 'Purple' 
+  },
+  4: { 
+    bg: '#3b82f6', 
+    bgOpacity: 'rgba(59, 130, 246, 0.3)', 
+    bgOpacityStrong: 'rgba(59, 130, 246, 0.5)',
+    border: '#60a5fa', 
+    text: '#60a5fa', 
+    name: 'Blue' 
+  },
+  5: { 
+    bg: '#ef4444', 
+    bgOpacity: 'rgba(239, 68, 68, 0.3)', 
+    bgOpacityStrong: 'rgba(239, 68, 68, 0.5)',
+    border: '#f87171', 
+    text: '#f87171', 
+    name: 'Red' 
+  },
+  6: { 
+    bg: '#f97316', 
+    bgOpacity: 'rgba(249, 115, 22, 0.3)', 
+    bgOpacityStrong: 'rgba(249, 115, 22, 0.5)',
+    border: '#fb923c', 
+    text: '#fb923c', 
+    name: 'Orange' 
+  },
+};
+
+export default function GameBoard({ 
   isWalletConnected, 
   gameId, 
-  territories = [], 
-  playerId,
+  territories, 
+  playerId, 
   selectedAction,
   onTileAction,
   gameState,
-  actionResult
-}: GameBoardProps) => {
-  const [gridSize, setGridSize] = useState({ rows: 7, cols: 7 });
-  const [grid, setGrid] = useState<Array<Array<GridCell>>>([]);
-  const [selectedTile, setSelectedTile] = useState<{x: number, y: number} | null>(null);
-  const [validMoves, setValidMoves] = useState<Array<{x: number, y: number}>>([]);
+  actionResult 
+}: GameBoardProps) {
+  // ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURNS
+  const [mounted, setMounted] = useState(false);
+  const [validMoves, setValidMoves] = useState<{x: number, y: number}[]>([]);
+  const [players, setPlayers] = useState<any[]>([]);
+  const [recentActions, setRecentActions] = useState<any[]>([]);
   
-  // Initialize the grid
+  // ALL EFFECT HOOKS
+  // Ensure component is mounted to prevent hydration issues
   useEffect(() => {
-    console.log('Rendering game board with territories:', territories);
+    setMounted(true);
+  }, []);
+  
+  // Fetch player information and recent actions
+  useEffect(() => {
+    if (!mounted) return;
     
-    // Create an empty grid
-    const emptyGrid: Array<Array<GridCell>> = [];
-    
-    for (let y = 0; y < gridSize.rows; y++) {
-      const row: GridCell[] = [];
-      for (let x = 0; x < gridSize.cols; x++) {
-        row.push({
-          owner: null,
-          color: 'transparent',
-          power: 0,
-          isVent: false,
-          x,
-          y
-        });
-      }
-      emptyGrid.push(row);
-    }
-    
-    if (territories && territories.length > 0) {
-      // Fill the grid with territory data
-      territories.forEach(territory => {
-        const x = territory.x_coord;
-        const y = territory.y_coord;
-        
-        if (x >= 0 && x < gridSize.cols && y >= 0 && y < gridSize.rows) {
-          emptyGrid[y][x] = {
-            owner: territory.owner_id ? String(territory.owner_id) : null,
-            color: territory.gas_type || 'green',
-            power: territory.defense_bonus || 0,
-            isVent: territory.is_gas_vent || false,
-            x,
-            y
-          };
+    const fetchGameData = async () => {
+      try {
+        const response = await fetch(`/api/games/${gameId}`);
+        const data = await response.json();
+        if (data.players) {
+          setPlayers(data.players);
         }
-      });
-    }
+        
+        // Fetch recent actions
+        const actionsResponse = await fetch(`/api/games/${gameId}/recent-actions`);
+        if (actionsResponse.ok) {
+          const actionsData = await actionsResponse.json();
+          setRecentActions(actionsData.actions || []);
+        }
+      } catch (error) {
+        console.error('Error fetching game data:', error);
+      }
+    };
     
-    setGrid(emptyGrid);
-  }, [gridSize, territories, gameId]);
-
+    fetchGameData();
+    
+    // Poll for updates every 5 seconds
+    const interval = setInterval(fetchGameData, 5000);
+    return () => clearInterval(interval);
+  }, [gameId, mounted]);
+  
   // Calculate valid moves when action is selected
   useEffect(() => {
-    if (!selectedAction || !playerId) {
+    if (!mounted || !selectedAction || !playerId || !territories) {
       setValidMoves([]);
       return;
     }
-
-    const playerTiles = grid.flat().filter(cell => cell.owner === String(playerId));
-    const adjacent = new Set<string>();
-
-    playerTiles.forEach(tile => {
-      const adjacentCoords = getAdjacentCoords(tile.x, tile.y);
+    
+    // Find player's owned territories
+    const playerTerritories = territories.filter(t => t.owner_id === playerId);
+    
+    if (playerTerritories.length === 0) {
+      setValidMoves([]);
+      return;
+    }
+    
+    // Calculate adjacent tiles for valid moves
+    const validPositions: {x: number, y: number}[] = [];
+    
+    playerTerritories.forEach(territory => {
+      // Get adjacent coordinates (hexagonal grid)
+      const adjacentCoords = getAdjacentCoords(territory.x_coord, territory.y_coord);
+      
       adjacentCoords.forEach(coord => {
-        if (coord.x >= 0 && coord.x < gridSize.cols && coord.y >= 0 && coord.y < gridSize.rows) {
-          adjacent.add(`${coord.x}-${coord.y}`);
+        // For defend action, only allow on owned territories
+        if (selectedAction === 'defend') {
+          const isOwnedTile = territories.find(t => 
+            t.x_coord === territory.x_coord && 
+            t.y_coord === territory.y_coord && 
+            t.owner_id === playerId
+          );
+          if (isOwnedTile && !validPositions.some(p => p.x === territory.x_coord && p.y === territory.y_coord)) {
+            validPositions.push({ x: territory.x_coord, y: territory.y_coord });
+          }
+        } else {
+          // For emit and bomb, allow adjacent tiles
+          if (!validPositions.some(p => p.x === coord.x && p.y === coord.y)) {
+            validPositions.push(coord);
+          }
         }
       });
     });
-
-    const validMovesArray = Array.from(adjacent).map(coordStr => {
-      const [x, y] = coordStr.split('-').map(Number);
-      return { x, y };
-    });
-
-    setValidMoves(validMovesArray);
-  }, [selectedAction, playerId, grid, gridSize]);
-
+    
+    setValidMoves(validPositions);
+  }, [mounted, selectedAction, playerId, territories]);
+  
+  // ALL FUNCTION DEFINITIONS
+  // Helper function to get consistent player color based on player ID
+  const getPlayerColor = (playerId: number) => {
+    // Create a consistent mapping of player ID to color index
+    // Sort all unique player IDs first to ensure consistency
+    const allPlayerIds = [...new Set(players.map(p => p.id))].sort();
+    const playerIndex = allPlayerIds.indexOf(playerId);
+    const colorIndex = ((playerIndex % 6) + 1) as keyof typeof PLAYER_COLORS;
+    return PLAYER_COLORS[colorIndex] || PLAYER_COLORS[1];
+  };
+  
   // Helper function for hexagonal adjacency
   const getAdjacentCoords = (x: number, y: number) => {
     const isEvenRow = y % 2 === 0;
@@ -137,152 +211,331 @@ const GameBoard = ({
       ];
     }
   };
-
-  const handleTileClick = (cell: GridCell) => {
-    if (!selectedAction || !onTileAction) return;
-
-    const isValidMove = validMoves.some(move => move.x === cell.x && move.y === cell.y);
+  
+  const handleTileClick = (x: number, y: number) => {
+    if (!selectedAction || !isWalletConnected || !playerId) return;
     
-    if (isValidMove) {
-      setSelectedTile({ x: cell.x, y: cell.y });
-      onTileAction(cell.x, cell.y, selectedAction);
+    // Check if this is a valid move
+    const isValidMove = validMoves.some(move => move.x === x && move.y === y);
+    if (!isValidMove) return;
+    
+    onTileAction(x, y, selectedAction);
+  };
+  
+  const getTileDisplay = (territory: any) => {
+    if (!territory) return { 
+      display: '', 
+      style: { 
+        backgroundColor: '#1f2937', 
+        borderColor: '#4b5563' 
+      } 
+    };
+    
+    const isOwned = territory.owner_id !== null;
+    const isOwnedByPlayer = territory.owner_id === playerId;
+    const isGasVent = territory.is_gas_vent;
+    
+    let backgroundColor = '#1f2937';
+    let borderColor = '#4b5563';
+    let textColor = '#9ca3af';
+    let display = '';
+    
+    // Gas vents have special styling
+    if (isGasVent) {
+      backgroundColor = isOwned ? '#dc2626' : '#991b1b'; // Red for gas vents
+      borderColor = '#ef4444';
+      textColor = '#fecaca';
+      display = '⛽'; // Gas pump emoji for gas vents
+      
+      if (isOwned && territory.owner_id) {
+        const playerColor = getPlayerColor(territory.owner_id);
+        if (playerColor) {
+          // Mix player color with gas vent red
+          backgroundColor = `linear-gradient(45deg, ${playerColor.bg}, #dc2626)`;
+          borderColor = playerColor.border;
+        }
+        
+        if (isOwnedByPlayer) {
+          borderColor = '#10b981'; // Green border for player's gas vents
+          textColor = '#ffffff';
+        }
+      }
+    } else if (isOwned && territory.owner_id) {
+      const playerColor = getPlayerColor(territory.owner_id);
+      if (playerColor) {
+        backgroundColor = playerColor.bgOpacity;
+        borderColor = playerColor.border;
+        textColor = playerColor.text;
+        
+        // Add extra highlighting for current player's territories
+        if (isOwnedByPlayer) {
+          borderColor = '#10b981';
+          backgroundColor = playerColor.bg;
+        }
+      }
+      
+      // Show defense bonus if active
+      if (territory.defense_bonus && territory.defense_bonus > 0) {
+        display = '🛡️';
+      } else {
+        // Show gas type indicator
+        display = territory.gas_type === 'green' ? '🟢' : 
+                 territory.gas_type === 'yellow' ? '🟡' : 
+                 territory.gas_type === 'toxic' ? '🟣' : '●';
+      }
     }
+    
+    return {
+      display,
+      style: {
+        background: backgroundColor,
+        borderColor,
+        color: textColor
+      }
+    };
   };
-
-  const isValidMove = (x: number, y: number) => {
-    return validMoves.some(move => move.x === x && move.y === y);
+  
+  // Create grid of territories (8x12 hexagonal grid)
+  const renderGameGrid = () => {
+    const rows = 8;
+    const cols = 12;
+    const grid = [];
+    
+    for (let y = 0; y < rows; y++) {
+      const row = [];
+      for (let x = 0; x < cols; x++) {
+        const territory = territories.find(t => t.x_coord === x && t.y_coord === y);
+        const isValidMove = validMoves.some(move => move.x === x && move.y === y);
+        const { display, style } = getTileDisplay(territory);
+        
+        row.push(
+          <div
+            key={`${x}-${y}`}
+            className={`
+              hex-tile w-12 h-12 flex items-center justify-center rounded-lg border-2 cursor-pointer
+              transition-all duration-200 font-bold text-sm
+              ${isValidMove ? 'ring-2 ring-yellow-400 ring-opacity-70 animate-pulse' : ''}
+              hover:scale-105 hover:brightness-110
+            `}
+            style={style}
+            onClick={() => handleTileClick(x, y)}
+            title={`Position: ${x},${y}${territory?.owner_id ? ` | Owner: Player ${territory.owner_id}` : ''}`}
+          >
+            {display}
+          </div>
+        );
+      }
+      grid.push(
+        <div key={y} className="flex justify-center gap-1">
+          {row}
+        </div>
+      );
+    }
+    
+    return grid;
   };
-
-  const isPlayerTile = (cell: GridCell) => {
-    return cell.owner === String(playerId);
-  };
-
+  
+  // NOW SAFE FOR CONDITIONAL RETURNS
+  if (!mounted) {
+    // Return basic loading state during SSR
+    return (
+      <div className="flex-1 bg-black/50 border-2 border-green-500/30 rounded-lg p-4">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-green-400 font-bold">Loading game board...</div>
+        </div>
+      </div>
+    );
+  }
+  
   if (!isWalletConnected) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-black/20 backdrop-blur-sm">
-        <div className="text-center p-8">
-          <h2 className="text-2xl mb-4 text-yellow-300">Connect Wallet to Play</h2>
-          <p className="text-gray-400">You need to connect your wallet to view and interact with the game board.</p>
+      <div className="flex-1 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-xl text-gray-300 mb-4">Connect your wallet to join the game</p>
         </div>
       </div>
     );
   }
   
   return (
-    <div className="flex-1 flex flex-col justify-center items-center p-4 overflow-auto">
-      {/* Game Status */}
-      {gameState && (
-        <div className="mb-4 text-center">
-          <div className="text-lg text-green-400">Gas Units: {gameState.gasUnits}</div>
-          {selectedAction && (
-            <div className="text-sm text-yellow-300 mt-2">
-              Click a highlighted tile to {selectedAction === 'emit' ? 'attack/claim' : selectedAction === 'bomb' ? 'bomb' : 'defend'}
-            </div>
-          )}
-          {actionResult && Date.now() - actionResult.timestamp < 5000 && (
-            <div className={`text-sm mt-2 p-2 rounded ${
-              actionResult.success 
-                ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
-                : 'bg-red-500/20 text-red-400 border border-red-500/30'
-            }`}>
-              {actionResult.message}
-            </div>
-          )}
+    <div className="flex-1 flex flex-col bg-gray-900/50 relative">
+      {/* Player Legend */}
+      <div className="bg-black/30 border-b border-green-500/20 p-4">
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="text-lg font-semibold text-green-400">Players</h3>
+          <div className="text-xs text-gray-400">
+            Game updates every 3 seconds
+          </div>
         </div>
-      )}
-
-      <div className="grid" style={{ 
-        display: 'grid',
-        gridTemplateColumns: `repeat(${gridSize.cols}, 60px)`,
-        gridTemplateRows: `repeat(${gridSize.rows}, 60px)`,
-        gap: '4px'
-      }}>
-        {grid.map((row, rowIndex) => 
-          row.map((cell, colIndex) => {
-            const isValidMoveCell = isValidMove(cell.x, cell.y);
-            const isPlayerOwned = isPlayerTile(cell);
-            const isSelected = selectedTile?.x === cell.x && selectedTile?.y === cell.y;
+        <div className="flex flex-wrap gap-4">
+          {players.map((player, index) => {
+            const playerColor = getPlayerColor(player.id);
+            const isCurrentPlayer = player.id === playerId;
+            const territoriesOwned = territories.filter(t => t.owner_id === player.id).length;
             
             return (
               <div 
-                key={`${rowIndex}-${colIndex}`}
-                className={`relative flex items-center justify-center transition-all duration-200 ${
-                  selectedAction && isValidMoveCell
-                    ? 'cursor-pointer hover:scale-110 ring-2 ring-yellow-400 ring-opacity-60' 
-                    : cell.owner 
-                      ? 'cursor-pointer hover:opacity-80' 
-                      : 'cursor-default'
-                } ${isSelected ? 'ring-4 ring-white' : ''}`}
-                style={{ 
-                  backgroundColor: cell.owner ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.1)',
-                  borderRadius: '4px',
-                  border: isValidMoveCell
-                    ? '3px solid #fbbf24'
-                    : cell.owner 
-                      ? `2px solid ${
-                          cell.color === 'green' ? '#10b981' : 
-                          cell.color === 'yellow' ? '#f59e0b' : 
-                          cell.color === 'toxic' ? '#8b5cf6' : '#6b7280'
-                        }`
-                      : '1px solid rgba(255,255,255,0.1)'
-                }}
-                onClick={() => handleTileClick(cell)}
+                key={player.id}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
+                  isCurrentPlayer 
+                    ? 'bg-green-500/20 border-green-400/50' 
+                    : 'bg-black/20 border-gray-600/50'
+                }`}
               >
-                {cell.isVent && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-4 h-4 rounded-full bg-red-500 animate-pulse"></div>
-                  </div>
-                )}
-                
-                {cell.owner && (
-                  <>
-                    <div 
-                      className="absolute inset-0 rounded-sm opacity-20" 
-                      style={{ 
-                        backgroundColor: 
-                          cell.color === 'green' ? '#10b981' : 
-                          cell.color === 'yellow' ? '#f59e0b' : 
-                          cell.color === 'toxic' ? '#8b5cf6' : '#6b7280'
-                      }}
-                    />
-                    <span className="text-xs font-bold text-white z-10">
-                      {isPlayerOwned ? '●' : cell.owner}
-                    </span>
-                  </>
-                )}
-
-                {isValidMoveCell && selectedAction && (
-                  <div className="absolute inset-0 bg-yellow-400 opacity-30 animate-pulse rounded-sm" />
-                )}
+                <div 
+                  className={`w-6 h-6 rounded-full border-2`}
+                  style={{
+                    backgroundColor: playerColor?.bg,
+                    borderColor: playerColor?.border
+                  }}
+                ></div>
+                <div className="flex flex-col">
+                  <span 
+                    className="font-semibold text-sm"
+                    style={{ color: playerColor?.text }}
+                  >
+                    {playerColor?.name} {player.username ? `(${player.username})` : ''}
+                    {isCurrentPlayer && ' (You)'}
+                    {player.is_bot && ' (AI)'}
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    {territoriesOwned} territories • {player.gas_units || 100} gas
+                  </span>
+                </div>
               </div>
             );
-          })
-        )}
+          })}
+        </div>
       </div>
-
-      {/* Legend */}
-      <div className="mt-4 text-xs text-gray-400 text-center">
-        <div className="flex gap-4 justify-center">
-          <span className="flex items-center gap-1">
-            <div className="w-3 h-3 bg-green-500 rounded"></div>
-            Green (Balanced)
-          </span>
-          <span className="flex items-center gap-1">
-            <div className="w-3 h-3 bg-yellow-500 rounded"></div>
-            Yellow (Offensive)
-          </span>
-          <span className="flex items-center gap-1">
-            <div className="w-3 h-3 bg-purple-500 rounded"></div>
-            Toxic (Defensive)
-          </span>
-          <span className="flex items-center gap-1">
-            <div className="w-3 h-3 bg-red-500 rounded animate-pulse"></div>
-            Gas Vent
-          </span>
+      
+      {/* Recent Actions Feed */}
+      {recentActions.length > 0 && (
+        <div className="bg-black/20 border-b border-green-500/10 p-3">
+          <h4 className="text-sm font-semibold text-green-400 mb-2">Recent Actions</h4>
+          <div className="text-xs text-gray-300 space-y-1 max-h-20 overflow-y-auto">
+            {recentActions.slice(0, 3).map((action, index) => {
+              const player = players.find(p => p.id === action.player_id);
+              const playerColor = action.player_id ? getPlayerColor(action.player_id) : PLAYER_COLORS[1];
+              const timeAgo = Math.floor((Date.now() - new Date(action.created_at).getTime()) / 1000);
+              const isAI = player?.is_bot;
+              
+              return (
+                <div key={index} className="flex items-center gap-2">
+                  <div 
+                    className={`w-3 h-3 rounded-full ${isAI ? 'animate-pulse' : ''}`}
+                    style={{ backgroundColor: playerColor?.bg }}
+                  ></div>
+                  <span style={{ color: playerColor?.text }}>
+                    {isAI ? '🤖 ' : ''}{player?.username || `Player ${action.player_id}`}
+                  </span>
+                  <span className="text-gray-400 text-xs">
+                    {action.action_type === 'emit' ? '💨' : 
+                     action.action_type === 'bomb' ? '💥' : '🛡️'} 
+                    {timeAgo}s ago
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      
+      {/* Action Result Display */}
+      {actionResult && (
+        <div className={`
+          fixed top-4 right-4 p-4 rounded-lg border z-50
+          ${actionResult.success 
+            ? 'bg-green-500/20 border-green-500/50 text-green-400' 
+            : 'bg-red-500/20 border-red-500/50 text-red-400'
+          }
+        `}>
+          <div className="flex items-center gap-2">
+            {actionResult.success ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 6L9 17l-5-5"/>
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="15" y1="9" x2="9" y2="15"/>
+                <line x1="9" y1="9" x2="15" y2="15"/>
+              </svg>
+            )}
+            <span className="font-semibold">{actionResult.message}</span>
+          </div>
+        </div>
+      )}
+      
+      {/* Game Instructions */}
+      {selectedAction && validMoves.length > 0 && (
+        <div className="bg-yellow-500/20 border border-yellow-500/30 text-yellow-400 p-3 m-4 rounded-lg">
+          <div className="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+            <span className="font-semibold">
+              {selectedAction === 'emit' && 'Click a highlighted tile adjacent to your territories to release gas'}
+              {selectedAction === 'bomb' && 'Click a highlighted tile to launch a gas bomb attack'}
+              {selectedAction === 'defend' && 'Click one of your territories to boost its defenses'}
+            </span>
+          </div>
+        </div>
+      )}
+      
+      {/* Game Grid */}
+      <div className="flex-1 flex items-center justify-center p-4">
+        <div className="space-y-1 max-w-4xl">
+          {renderGameGrid()}
+        </div>
+      </div>
+      
+      {/* Game Legend */}
+      <div className="bg-black/30 border-t border-green-500/20 p-4">
+        <div className="flex justify-center gap-8 text-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-gray-800 border border-gray-600 rounded"></div>
+            <span className="text-gray-400">Empty Territory</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-green-500/30 border border-green-400 rounded"></div>
+            <span className="text-green-400">Your Territory</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-red-600 rounded-full"></div>
+            <span className="text-red-400">Gas Vent</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-yellow-400/50 border-2 border-yellow-400 rounded animate-pulse"></div>
+            <span className="text-yellow-400">Valid Move</span>
+          </div>
+        </div>
+      </div>
+      
+      <div className="mb-6">
+        <h3 className="text-lg font-semibold text-green-400 mb-3">🎯 Game Objectives</h3>
+        <div className="space-y-2 text-sm">
+          <div className="text-green-300">
+            <strong>Victory Condition:</strong> Control 15+ territories to win!
+          </div>
+          <div className="text-blue-300">
+            <strong>Gas System:</strong> 
+            <ul className="ml-4 mt-1 space-y-1 list-disc">
+              <li>+3 gas every 30 seconds (base regeneration)</li>
+              <li>Control <span className="text-red-400">⛽</span> gas vents for +2 extra gas per vent per 30s</li>
+              <li>Gas vents also give +5 gas bonus per vent after each action</li>
+            </ul>
+          </div>
+          <div className="text-yellow-300">
+            <strong>Strategy Tips:</strong>
+            <ul className="ml-4 mt-1 space-y-1 list-disc">
+              <li>Prioritize gas vents for resource advantage</li>
+              <li>Expand early to claim territory</li>
+              <li>Use defense to protect key positions</li>
+              <li>Watch for 🤖 AI player movements</li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>
   );
-};
-
-export default GameBoard; 
+}
