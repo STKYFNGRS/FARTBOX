@@ -1,3 +1,7 @@
+'use client';
+
+import { ConnectButton } from './ConnectButton';
+
 interface GameHeaderProps {
   isWalletConnected: boolean;
 }
@@ -21,7 +25,7 @@ export default function GameHeader({ isWalletConnected }: GameHeaderProps) {
           </div>
         </div>
         
-        <appkit-button />
+        <ConnectButton className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors" />
       </div>
     </header>
   );

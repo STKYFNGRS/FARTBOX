@@ -69,12 +69,19 @@ export default function Home() {
       }));
     }, 50);
     
-    // Redirect to lobby if wallet is connected
-    if (isConnected) {
-      router.push('/lobby');
-    }
-    
     return () => clearInterval(animateParticles);
+  }, []);
+  
+  // Separate useEffect for wallet connection redirect to avoid dependency issues
+  useEffect(() => {
+    if (isConnected) {
+      // Small delay to ensure smooth transition
+      const timer = setTimeout(() => {
+        router.push('/lobby');
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
   }, [isConnected, router]);
   
   return (
@@ -177,15 +184,6 @@ export default function Home() {
               </div>
             </div>
           </div>
-          
-          {isConnected && (
-            <button 
-              onClick={() => router.push('/lobby')}
-              className="px-8 py-4 bg-green-500 hover:bg-green-600 text-white rounded-lg text-xl font-bold transition-all shadow-lg shadow-green-500/20 hover:shadow-green-500/40"
-            >
-              Enter Game Lobby
-            </button>
-          )}
         </div>
       </div>
     </main>

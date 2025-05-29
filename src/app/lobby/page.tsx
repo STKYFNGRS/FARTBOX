@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
-import GameHeader from '../../components/GameHeader';
-import Sidebar from '../../components/Sidebar';
+import GameHeader from '@/components/GameHeader';
+import Sidebar from '@/components/Sidebar';
 import { ActiveTab } from '../../components/Sidebar';
 
 // Types
@@ -14,91 +14,287 @@ type GameInstance = {
   createdBy: string;
   playerCount: number;
   maxPlayers: number;
-  status: 'waiting' | 'in-progress' | 'completed';
+  status: 'pending' | 'active' | 'completed';
   createdAt: string;
+  isPlayerInGame?: boolean;
 };
 
-export default function LobbyPage() {
-  const [activeGames, setActiveGames] = useState<GameInstance[]>([]);
+type GameOptions = {
+  maxPlayers: number;
+  includeBots: boolean;
+  botCount: number;
+  allowedGasTypes: string[];
+  gameDuration: number; // in minutes
+};
+
+export default function Lobby() {
+  const [games, setGames] = useState<GameInstance[]>([]);
+  const [playerId, setPlayerId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [gasClouds, setGasClouds] = useState<{ x: number; y: number; size: number; color: string; speed: number }[]>([]);
+  const [gasParticles, setGasParticles] = useState<{ x: number; y: number; size: number; color: string; direction: number }[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newGameName, setNewGameName] = useState('');
-  const [gasClouds, setGasClouds] = useState<{ x: number; y: number; size: number; color: string }[]>([]);
+  const [gameOptions, setGameOptions] = useState<GameOptions>({
+    maxPlayers: 6,
+    includeBots: false,
+    botCount: 0,
+    allowedGasTypes: ['green', 'yellow', 'toxic'],
+    gameDuration: 30,
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('leaderboard');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('help');
   
-  const { isConnected, address } = useAccount();
+  const { address, isConnected } = useAccount();
   const router = useRouter();
   
-  // Placeholder function - will be replaced with actual API call
-  const fetchActiveGames = async () => {
-    // Mock data for now
-    setActiveGames([
-      {
-        id: '1',
-        name: 'Gas War Zone Alpha',
-        createdBy: '0x1234...5678',
-        playerCount: 3,
-        maxPlayers: 6,
-        status: 'waiting',
-        createdAt: new Date(Date.now() - 3600000).toISOString(),
-      },
-      {
-        id: '2',
-        name: 'Methane Battleground',
-        createdBy: '0x9876...5432',
-        playerCount: 6,
-        maxPlayers: 6,
-        status: 'in-progress',
-        createdAt: new Date(Date.now() - 7200000).toISOString(),
-      },
-    ]);
-  };
-  
-  const createNewGame = () => {
-    // Will be replaced with actual API call
-    const newGameId = Date.now().toString();
-    // After creating, redirect to the new game
-    router.push(`/game/${newGameId}`);
-  };
-  
-  const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
-  
+  // Generate background effects
   useEffect(() => {
-    // Redirect to home if not connected
+    // Generate background gas clouds
+    const clouds = Array.from({ length: 12 }).map(() => ({
+      x: Math.random() * 100,
+      y: Math.random() * 100,
+      size: 30 + Math.random() * 80,
+      color: Math.random() > 0.6 
+        ? 'green' 
+        : Math.random() > 0.3 
+          ? 'yellow' 
+          : 'toxic',
+      speed: 0.5 + Math.random() * 2
+    }));
+    setGasClouds(clouds);
+    
+    // Generate floating gas particles
+    const particles = Array.from({ length: 30 }).map(() => ({
+      x: Math.random() * 100,
+      y: Math.random() * 100,
+      size: 4 + Math.random() * 10,
+      color: Math.random() > 0.6 
+        ? 'green' 
+        : Math.random() > 0.3 
+          ? 'yellow' 
+          : 'toxic',
+      direction: Math.random() * 360
+    }));
+    setGasParticles(particles);
+    
+    // Animate particles floating around
+    const animateParticles = setInterval(() => {
+      setGasParticles(prev => prev.map(particle => {
+        const radians = particle.direction * Math.PI / 180;
+        let newX = particle.x + Math.cos(radians) * 0.1;
+        let newY = particle.y + Math.sin(radians) * 0.1;
+        
+        // Wrap around edges
+        if (newX > 105) newX = -5;
+        if (newX < -5) newX = 105;
+        if (newY > 105) newY = -5;
+        if (newY < -5) newY = 105;
+        
+        // Occasionally change direction
+        const newDirection = Math.random() > 0.95 
+          ? (particle.direction + (Math.random() * 40 - 20)) % 360 
+          : particle.direction;
+          
+        return {
+          ...particle,
+          x: newX,
+          y: newY,
+          direction: newDirection
+        };
+      }));
+    }, 50);
+    
+    return () => clearInterval(animateParticles);
+  }, []);
+  
+  // Handle authentication and fetch games
+  useEffect(() => {
+    // Redirect to home if wallet is not connected
     if (!isConnected) {
       router.push('/');
       return;
     }
     
-    // Generate background gas clouds
-    const clouds = Array.from({ length: 5 }).map(() => ({
-      x: Math.random() * 100,
-      y: Math.random() * 100,
-      size: 20 + Math.random() * 30,
-      color: Math.random() > 0.5 ? 'green' : 'yellow'
-    }));
-    setGasClouds(clouds);
+    if (isConnected && address) {
+      // Authenticate player
+      fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          walletAddress: address
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.player) {
+          setPlayerId(data.player.id);
+          // Fetch available games with player information
+          return fetch(`/api/games?status=pending&playerId=${data.player.id}`);
+        }
+      })
+      .then(res => res?.json())
+      .then(data => {
+        if (data?.games) {
+          setGames(data.games);
+        }
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Error fetching data:', err);
+        setError('Failed to load data. Please try again.');
+        setLoading(false);
+      });
+    }
+  }, [isConnected, address, router]);
+  
+  // Create a new game
+  const createGame = async () => {
+    if (!playerId) {
+      setError('You must be connected with a wallet to create a game');
+      return;
+    }
     
-    // Load active games
-    fetchActiveGames();
-  }, [isConnected, router]);
+    try {
+      setLoading(true);
+      console.log('Creating game with options:', {
+        playerId,
+        maxPlayers: gameOptions.maxPlayers,
+        includeBots: gameOptions.includeBots,
+        botCount: gameOptions.botCount,
+        gameDuration: gameOptions.gameDuration
+      });
+      
+      console.log('Sending API request to create game...');
+      const res = await fetch('/api/games', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          playerId,
+          maxPlayers: gameOptions.maxPlayers,
+          includeBots: gameOptions.includeBots,
+          botCount: gameOptions.botCount,
+          allowedGasTypes: gameOptions.allowedGasTypes,
+          gameDuration: gameOptions.gameDuration
+        })
+      });
+      
+      console.log('API response status:', res.status);
+      
+      console.log('Parsing response as JSON...');
+      const data = await res.json();
+      console.log('API response data:', data);
+      
+      if (data.success) {
+        console.log('Game created successfully, gameId type:', typeof data.gameId);
+        console.log('Redirecting to game page:', `/game/${data.gameId}`);
+        setShowCreateModal(false);
+        
+        // Use a direct window location redirect instead of Next.js router
+        // This forces a full page reload which might be needed
+        console.log('Attempting window.location.href redirect');
+        window.location.href = `/game/${data.gameId}`;
+        
+        // Fallback to router.push if the above doesn't trigger immediately
+        console.log('Setting up router fallback...');
+        setTimeout(() => {
+          console.log('Executing router.push fallback');
+          router.push(`/game/${data.gameId}`);
+        }, 500);
+      } else {
+        console.error('Game creation failed with error:', data.error || 'Unknown error');
+        setError(data.error || 'Failed to create game');
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error('Exception during game creation:', error);
+      setError('Failed to create game. Please try again.');
+      setLoading(false);
+    }
+  };
+  
+  // Join an existing game
+  const joinGame = async (gameId: string) => {
+    if (!playerId) {
+      setError('You must be connected with a wallet to join a game');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      
+      const res = await fetch(`/api/games/${gameId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerId })
+      });
+      
+      const data = await res.json();
+      
+      if (data.success) {
+        // Redirect to game page
+        router.push(`/game/${gameId}`);
+      } else {
+        setError(data.error || 'Failed to join game');
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error('Error joining game:', error);
+      setError('Failed to join game. Please try again.');
+      setLoading(false);
+    }
+  };
+  
+  const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
   
   return (
     <main className="flex flex-col h-screen overflow-hidden gas-container">
       {/* Background Effects */}
-      <div className="fixed inset-0 pointer-events-none">
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        {/* Glow effect in center */}
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full h-full bg-gradient-radial from-green-500/10 via-transparent to-transparent"></div>
+        
+        {/* Gas clouds */}
         {gasClouds.map((cloud, i) => (
           <div 
             key={i}
-            className={`absolute rounded-full animate-pulse opacity-20 ${cloud.color === 'green' ? 'bg-green-500' : 'bg-yellow-500'}`}
+            className={`absolute rounded-full animate-pulse ${
+              cloud.color === 'green' 
+                ? 'bg-green-500' 
+                : cloud.color === 'yellow' 
+                  ? 'bg-yellow-500' 
+                  : 'bg-purple-500'
+            } opacity-${cloud.size > 70 ? '10' : cloud.size > 40 ? '15' : '20'}`}
             style={{
               left: `${cloud.x}%`,
               top: `${cloud.y}%`,
               width: `${cloud.size}px`,
               height: `${cloud.size}px`,
-              filter: 'blur(20px)',
-              animationDuration: `${3 + Math.random() * 4}s`,
-              animationDelay: `${Math.random() * 2}s`
+              filter: 'blur(30px)',
+              animationDuration: `${7 - cloud.speed}s`,
+              animationDelay: `${Math.random() * 5}s`
+            }}
+          />
+        ))}
+        
+        {/* Gas particles */}
+        {gasParticles.map((particle, i) => (
+          <div 
+            key={`p-${i}`}
+            className={`absolute rounded-full ${
+              particle.color === 'green' 
+                ? 'bg-green-400' 
+                : particle.color === 'yellow' 
+                  ? 'bg-yellow-400' 
+                  : 'bg-purple-400'
+            } opacity-30`}
+            style={{
+              left: `${particle.x}%`,
+              top: `${particle.y}%`,
+              width: `${particle.size}px`,
+              height: `${particle.size}px`,
+              filter: 'blur(2px)',
+              transition: 'all 0.5s linear'
             }}
           />
         ))}
@@ -106,108 +302,164 @@ export default function LobbyPage() {
       
       <GameHeader isWalletConnected={isConnected} />
       
-      <div className="relative flex flex-1 overflow-hidden">
-        {/* Sidebar Toggle Button */}
-        <div 
-          className="absolute left-4 top-20 z-30 cursor-pointer"
-          onClick={toggleSidebar}
-        >
-          <button className="p-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-full transition-all">
-            {sidebarOpen ? (
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-            )}
-          </button>
+      <div className="flex flex-1 z-10">
+        <div className="flex-1 p-8">
+          <div className="flex justify-between items-center mb-8">
+            <h1 className="text-4xl font-bold text-green-400">Game Lobby</h1>
+            <button 
+              onClick={() => setShowCreateModal(true)}
+              className="px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg text-lg font-bold transition-all"
+              disabled={loading || !playerId}
+            >
+              Create New Game
+            </button>
+          </div>
+          
+          {error && (
+            <div className="bg-red-500/20 border border-red-500/30 text-red-400 p-4 rounded-lg mb-6">
+              {error}
+            </div>
+          )}
+          
+          <h2 className="text-2xl font-semibold text-white mb-4">Active Games</h2>
+          
+          {loading ? (
+            <div className="text-center py-12">
+              <p className="text-xl text-gray-300">Loading games...</p>
+            </div>
+          ) : games.length > 0 ? (
+            <div className="space-y-4">
+              {games.map(game => (
+                <div key={game.id} className="bg-black/30 backdrop-blur-sm p-6 rounded-xl border border-green-500/20">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h3 className="text-xl font-bold text-green-400">
+                        Game #{game.id}
+                      </h3>
+                      <p className="text-gray-300">Players: {game.playerCount}/{game.maxPlayers}</p>
+                      <p className="text-gray-300">Status: {game.status}</p>
+                    </div>
+                    <div>
+                      {game.isPlayerInGame ? (
+                        <button 
+                          onClick={() => joinGame(game.id)}
+                          className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-bold transition-all"
+                          disabled={loading}
+                        >
+                          {game.status === 'active' ? 'Rejoin Game' : 'Enter Game'}
+                        </button>
+                      ) : game.status === 'pending' && game.playerCount < game.maxPlayers ? (
+                        <button 
+                          onClick={() => joinGame(game.id)}
+                          className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg font-bold transition-all"
+                          disabled={loading}
+                        >
+                          Join Game
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={() => router.push(`/game/${game.id}?spectate=true`)}
+                          className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg font-bold transition-all"
+                          disabled={loading}
+                        >
+                          Spectate
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 bg-black/20 backdrop-blur-sm rounded-xl border border-green-500/10">
+              <p className="text-xl text-gray-300 mb-4">No games available at the moment.</p>
+              <p className="text-gray-400">Create a new game to get started!</p>
+            </div>
+          )}
         </div>
         
-        {/* Sidebar for connected users */}
         <Sidebar
           isOpen={sidebarOpen}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           isWalletConnected={isConnected}
         />
-        
-        {/* Main Lobby Content */}
-        <div className="flex-1 container mx-auto py-8 px-4 overflow-auto">
-          <div className="flex justify-between items-center mb-8 pl-10">
-            <h1 className="text-3xl font-bold text-green-400">Game Lobby</h1>
-            <button 
-              onClick={() => setShowCreateModal(true)}
-              className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-lg transition"
-            >
-              Create New Game
-            </button>
-          </div>
-          
-          <div className="bg-black/30 rounded-xl backdrop-blur-sm p-6 ml-10">
-            <h2 className="text-xl text-green-300 mb-4">Active Games</h2>
-            
-            {activeGames.length === 0 ? (
-              <p className="text-gray-300">No active games found. Create one to get started!</p>
-            ) : (
-              <div className="grid gap-4">
-                {activeGames.map(game => (
-                  <div key={game.id} className="bg-gray-800/50 p-4 rounded-lg flex justify-between items-center">
-                    <div>
-                      <h3 className="text-xl text-white font-semibold">{game.name}</h3>
-                      <p className="text-gray-400">Created by: {game.createdBy}</p>
-                      <p className="text-gray-400">Players: {game.playerCount}/{game.maxPlayers}</p>
-                      <p className="text-gray-400">Status: {game.status}</p>
-                    </div>
-                    <button
-                      className={`px-4 py-2 rounded-lg ${
-                        game.status === 'waiting' 
-                          ? 'bg-green-500 hover:bg-green-600 text-white' 
-                          : game.status === 'in-progress'
-                            ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
-                            : 'bg-gray-500 text-gray-200 cursor-not-allowed'
-                      }`}
-                      onClick={() => router.push(`/game/${game.id}`)}
-                      disabled={game.status === 'completed'}
-                    >
-                      {game.status === 'waiting' ? 'Join Game' : game.status === 'in-progress' ? 'Spectate' : 'Completed'}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
       </div>
       
-      {/* Create Game Modal */}
+      {/* Game Creation Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-gray-800 p-6 rounded-xl w-full max-w-md">
-            <h2 className="text-2xl text-green-400 mb-4">Create New Game</h2>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-black/80 border border-green-500/30 rounded-xl p-8 max-w-md w-full">
+            <h2 className="text-2xl font-bold text-green-400 mb-6">Create New Game</h2>
             
-            <div className="mb-4">
-              <label className="block text-gray-300 mb-2">Game Name</label>
-              <input
-                type="text"
-                value={newGameName}
-                onChange={(e) => setNewGameName(e.target.value)}
-                className="w-full bg-gray-700 text-white px-3 py-2 rounded"
-                placeholder="Enter game name..."
-              />
-            </div>
-            
-            <div className="flex justify-end space-x-3">
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={createNewGame}
-                className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded"
-                disabled={!newGameName.trim()}
-              >
-                Create Game
-              </button>
+            <div className="space-y-6">
+              <div>
+                <label className="block text-gray-300 mb-2">Max Players</label>
+                <select 
+                  className="w-full bg-black/50 border border-green-500/30 rounded p-2 text-white"
+                  value={gameOptions.maxPlayers}
+                  onChange={(e) => setGameOptions({...gameOptions, maxPlayers: parseInt(e.target.value)})}
+                >
+                  <option value="2">2 Players</option>
+                  <option value="4">4 Players</option>
+                  <option value="6">6 Players</option>
+                </select>
+              </div>
+              
+              <div className="flex items-center">
+                <input 
+                  type="checkbox"
+                  id="includeBots"
+                  className="mr-2"
+                  checked={gameOptions.includeBots}
+                  onChange={(e) => setGameOptions({...gameOptions, includeBots: e.target.checked})}
+                />
+                <label htmlFor="includeBots" className="text-gray-300">Include AI Players</label>
+              </div>
+              
+              {gameOptions.includeBots && (
+                <div>
+                  <label className="block text-gray-300 mb-2">Number of AI Players</label>
+                  <select 
+                    className="w-full bg-black/50 border border-green-500/30 rounded p-2 text-white"
+                    value={gameOptions.botCount}
+                    onChange={(e) => setGameOptions({...gameOptions, botCount: parseInt(e.target.value)})}
+                  >
+                    {Array.from({length: gameOptions.maxPlayers - 1}, (_, i) => i + 1).map(num => (
+                      <option key={num} value={num}>{num} AI Player{num > 1 ? 's' : ''}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              
+              <div>
+                <label className="block text-gray-300 mb-2">Game Duration</label>
+                <select
+                  className="w-full bg-black/50 border border-green-500/30 rounded p-2 text-white"
+                  value={gameOptions.gameDuration}
+                  onChange={(e) => setGameOptions({...gameOptions, gameDuration: parseInt(e.target.value)})}
+                >
+                  <option value="15">15 Minutes</option>
+                  <option value="30">30 Minutes</option>
+                  <option value="45">45 Minutes</option>
+                </select>
+              </div>
+              
+              <div className="flex justify-end gap-4 mt-8">
+                <button 
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={createGame}
+                  className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded"
+                  disabled={loading}
+                >
+                  {loading ? 'Creating...' : 'Create Game'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

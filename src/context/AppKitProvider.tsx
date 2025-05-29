@@ -1,11 +1,13 @@
 'use client';
 
-import { wagmiAdapter, projectId as envProjectId, networks } from '../lib/wagmi';
+import { wagmiAdapter, projectId as envProjectId } from '../lib/wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createAppKit } from '@reown/appkit/react';
 import React, { type ReactNode } from 'react';
 import { cookieToInitialState, WagmiProvider, type Config } from 'wagmi';
 import { mainnet, base } from '@reown/appkit/networks';
+import { TransactionProvider } from 'ethereum-identity-kit';
+import 'ethereum-identity-kit/css';
 
 // Set up queryClient
 const queryClient = new QueryClient();
@@ -32,24 +34,44 @@ const metadata = {
   ],
 };
 
-createAppKit({
+// Create the modal and export it
+export const modal = createAppKit({
   adapters: [wagmiAdapter],
   projectId,
-  networks: [mainnet, base] as any, // Type cast to avoid type issues
+  networks: [mainnet, base],
   defaultNetwork: base,
   metadata: metadata,
   features: {
     analytics: true,
     connectMethodsOrder: ['wallet', 'email', 'social'],
+    email: true,
+    socials: ['google', 'x', 'github', 'discord', 'apple'],
+    emailShowWallets: true,
   },
+  themeMode: 'dark',
+  themeVariables: {
+    '--w3m-font-family': 'Inter, system-ui, sans-serif',
+    '--w3m-accent': 'rgb(34, 197, 94)', // green-500
+    '--w3m-color-mix': 'rgb(34, 197, 94)',
+    '--w3m-color-mix-strength': 20,
+    '--w3m-border-radius-master': '8px',
+  },
+  enableEIP6963: true,
+  enableCoinbase: true,
+  enableWalletConnect: true,
 });
 
 function AppKitProvider({ children, cookies }: { children: ReactNode; cookies: string | null }) {
   const initialState = cookieToInitialState(wagmiAdapter.wagmiConfig as Config, cookies);
 
+  // Wrap children with TransactionProvider from ethereum-identity-kit
   return (
     <WagmiProvider config={wagmiAdapter.wagmiConfig as Config} initialState={initialState}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <TransactionProvider>
+          {children}
+        </TransactionProvider>
+      </QueryClientProvider>
     </WagmiProvider>
   );
 }

@@ -42,7 +42,7 @@ export default function RootLayout({
   const cookie = headers().get("cookie") || null;
 
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <body
         className={`${inter.variable} ${robotoMono.variable} antialiased`}
       >
