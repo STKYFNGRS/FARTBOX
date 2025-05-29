@@ -74,7 +74,10 @@ const sql = neon(DATABASE_URL);
  */
 export async function query<T = Record<string, any>>(text: string, params: any[] = []): Promise<QueryResult<T>> {
   try {
-    console.log(`[DB] Executing query: ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}`);
+    // Only log in development or if VERBOSE_LOGGING is enabled
+    if (process.env.NODE_ENV === 'development' && process.env.VERBOSE_LOGGING === 'true') {
+      console.log(`[DB] Executing query: ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}`);
+    }
     
     // Execute query using Neon's serverless SQL
     const result = await sql(text, params);
@@ -83,13 +86,35 @@ export async function query<T = Record<string, any>>(text: string, params: any[]
     const rows = Array.isArray(result) ? result as T[] : [];
     const rowCount = rows.length;
     
-    console.log(`[DB] Query completed: ${rowCount} rows returned`);
+    // Convert any timestamp fields to proper UTC dates
+    const processedRows = rows.map(row => {
+      if (typeof row === 'object' && row !== null) {
+        const processedRow = { ...row } as Record<string, any>;
+        Object.keys(processedRow).forEach(key => {
+          const value = processedRow[key];
+          // Convert timestamp strings to Date objects if they look like timestamps
+          if (typeof value === 'string' && 
+              (key.includes('time') || key.includes('Time') || key.includes('_at')) &&
+              value.match(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}/)) {
+            processedRow[key] = new Date(value);
+          }
+        });
+        return processedRow;
+      }
+      return row;
+    });
+    
+    // Only log completion in development with verbose logging
+    if (process.env.NODE_ENV === 'development' && process.env.VERBOSE_LOGGING === 'true') {
+      console.log(`[DB] Query completed: ${rowCount} rows returned`);
+    }
     
     return {
-      rows,
+      rows: processedRows as T[],
       rowCount
     };
   } catch (error: any) {
+    // Always log errors
     console.error('[DB] Database query failed:', {
       error: error.message,
       code: error.code,
@@ -108,13 +133,17 @@ export async function query<T = Record<string, any>>(text: string, params: any[]
  */
 export async function transaction<T>(callback: (sql: typeof query) => Promise<T>): Promise<T> {
   try {
-    console.log('[DB] Starting transaction');
+    if (process.env.NODE_ENV === 'development' && process.env.VERBOSE_LOGGING === 'true') {
+      console.log('[DB] Starting transaction');
+    }
     
     // For Neon, we can use the sql function directly in a transaction-like manner
     // Neon handles connection pooling and transactions automatically
     const result = await callback(query);
     
-    console.log('[DB] Transaction completed successfully');
+    if (process.env.NODE_ENV === 'development' && process.env.VERBOSE_LOGGING === 'true') {
+      console.log('[DB] Transaction completed successfully');
+    }
     return result;
   } catch (error: any) {
     console.error('[DB] Transaction failed:', error.message);
@@ -203,6 +232,14 @@ export async function ensureTablesExist(): Promise<void> {
       territories_final INTEGER,
       tokens_earned INTEGER DEFAULT 0,
       xp_earned INTEGER DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    
+    `CREATE TABLE IF NOT EXISTS chat_messages (
+      id SERIAL PRIMARY KEY,
+      player_id INTEGER REFERENCES players(id),
+      message TEXT NOT NULL,
+      message_type VARCHAR(20) DEFAULT 'lobby',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`
   ];

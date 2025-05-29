@@ -300,10 +300,10 @@ export default function GamePage() {
     if (!mounted || !gameData?.game) return;
     
     if (gameData.game.status === 'completed') {
-      // Show completion message and redirect after delay
+      // Show completion message and redirect after a longer delay to show results
       setTimeout(() => {
         router.push('/lobby');
-      }, 5000);
+      }, 15000); // Increased to 15 seconds to see victory screen
     }
   }, [mounted, gameData?.game?.status, router]);
   
@@ -495,6 +495,72 @@ export default function GamePage() {
           gameState={gameState || undefined}
           onGameStateUpdate={refreshGameState}
         />
+      )}
+      
+      {/* Victory/Game Completion Overlay */}
+      {gameData?.status === 'completed' && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="max-w-lg w-full mx-4 p-6 bg-gray-900/95 border-2 border-green-500/30 rounded-lg text-center">
+            <div className="mb-4">
+              <h2 className="text-3xl font-bold text-green-400 mb-2">🎉 Game Complete!</h2>
+              <p className="text-gray-300">
+                Fart.box: Gas Dominance - Season 1
+              </p>
+            </div>
+            
+            {/* Winner Display */}
+            {gameData.players && (
+              <div className="mb-6">
+                <div className="text-lg text-yellow-400 mb-3">👑 Final Standings:</div>
+                <div className="space-y-2">
+                  {gameData.players
+                    .sort((a, b) => (b.territories_count || 0) - (a.territories_count || 0))
+                    .slice(0, 3)
+                    .map((player, index) => (
+                    <div 
+                      key={player.id}
+                      className={`flex items-center justify-between p-2 rounded ${
+                        index === 0 ? 'bg-yellow-500/20 border border-yellow-500/30' :
+                        index === 1 ? 'bg-gray-500/20 border border-gray-500/30' :
+                        'bg-orange-500/20 border border-orange-500/30'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">
+                          {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
+                        </span>
+                        <span className={`font-semibold ${
+                          index === 0 ? 'text-yellow-400' :
+                          index === 1 ? 'text-gray-300' :
+                          'text-orange-400'
+                        }`}>
+                          {player.is_bot ? '🤖 ' : ''}{player.username || `Player ${player.id}`}
+                          {player.id === playerId ? ' (You)' : ''}
+                        </span>
+                      </div>
+                      <div className="text-sm text-gray-400">
+                        {player.territories_count || 0} territories
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Actions */}
+            <div className="space-y-3">
+              <button 
+                onClick={() => router.push('/lobby')}
+                className="w-full px-4 py-2 bg-green-500/20 text-green-400 border border-green-500/30 rounded hover:bg-green-500/30 transition-colors"
+              >
+                Return to Lobby
+              </button>
+              <p className="text-xs text-gray-400">
+                Automatically returning to lobby in 15 seconds...
+              </p>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );

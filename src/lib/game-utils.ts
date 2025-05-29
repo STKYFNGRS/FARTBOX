@@ -4,10 +4,9 @@ import { query, getAdjacentCoords } from './db';
 export async function startGame(gameId: number | string) {
   const gameIdNum = typeof gameId === 'string' ? parseInt(gameId) : gameId;
   
-  console.log(`Starting game: ${gameIdNum}`);
+  console.log(`🎮 Starting game ${gameIdNum}`);
   
   try {
-    console.log('Updating game status to active');
     // Update game status to active
     await query(`
       UPDATE game_instances 
@@ -15,7 +14,6 @@ export async function startGame(gameId: number | string) {
       WHERE id = $1
     `, [gameIdNum]);
     
-    console.log('Getting players in the game');
     // Get players in the game
     const playersResult = await query<{player_id: number, is_bot: boolean}>(`
       SELECT 
@@ -29,103 +27,96 @@ export async function startGame(gameId: number | string) {
         pgs.game_instance_id = $1
     `, [gameIdNum]);
     
-    console.log('Players in game:', playersResult);
-    
     const players = playersResult.rows.map((row: any) => row.player_id);
     const hasBots = playersResult.rows.some((row: any) => row.is_bot);
     
-    console.log(`Found ${players.length} players, includes bots: ${hasBots}`);
+    console.log(`👥 ${players.length} players (${hasBots ? 'with AI bots' : 'humans only'})`);
     
-    // Initialize map with proper 8x12 grid and strategic gas vents
+    // Initialize map with proper 8x12 grid and randomized gas vents
     const mapSeed = Math.floor(Math.random() * 1000000);
-    console.log(`Map seed: ${mapSeed}`);
     
-    // Fix random function - use proper seeded random
-    let seedCounter = 0;
-    const seededRandom = (max: number) => {
-      seedCounter++;
-      const x = Math.sin(mapSeed + seedCounter) * 10000;
-      return Math.floor((x - Math.floor(x)) * max);
+    // Use crypto.getRandomValues for better randomness if available, fallback to Math.random
+    const getRandomInt = (max: number) => {
+      if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+        const array = new Uint32Array(1);
+        window.crypto.getRandomValues(array);
+        return array[0] % max;
+      } else {
+        return Math.floor(Math.random() * max);
+      }
     };
     
-    console.log('Creating strategic gas vents (5 vents for 8x12 map)');
-    // Create 5 gas vents strategically placed for 8x12 map
+    // Create 5 gas vents in random positions (not fixed)
     const gasVents: Array<{x: number, y: number}> = [];
-    const ventPositions = [
-      { x: 2, y: 2 },   // Top-left quadrant
-      { x: 9, y: 2 },   // Top-right quadrant  
-      { x: 5, y: 4 },   // Center
-      { x: 2, y: 6 },   // Bottom-left quadrant
-      { x: 9, y: 6 }    // Bottom-right quadrant
-    ];
+    const usedPositions = new Set<string>();
     
     for (let i = 0; i < 5; i++) {
-      const vent = ventPositions[i];
-      gasVents.push(vent);
-      console.log(`Creating gas vent at (${vent.x}, ${vent.y})`);
+      let x: number, y: number, posKey: string;
+      let attempts = 0;
       
-      try {
-        await query(`
-          INSERT INTO game_tiles 
-            (game_instance_id, x_coord, y_coord, is_gas_vent) 
-          VALUES 
-            ($1, $2, $3, $4)
-        `, [gameIdNum, vent.x, vent.y, true]);
-        console.log(`Gas vent ${i + 1} created successfully`);
-      } catch (ventError) {
-        console.error(`Error creating gas vent ${i + 1}:`, ventError);
-        throw ventError;
+      do {
+        x = getRandomInt(12);  // 0-11
+        y = getRandomInt(8);   // 0-7
+        posKey = `${x},${y}`;
+        attempts++;
+      } while (usedPositions.has(posKey) && attempts < 50);
+      
+      if (attempts < 50) {
+        gasVents.push({ x, y });
+        usedPositions.add(posKey);
+        
+        try {
+          await query(`
+            INSERT INTO game_tiles 
+              (game_instance_id, x_coord, y_coord, is_gas_vent) 
+            VALUES 
+              ($1, $2, $3, $4)
+          `, [gameIdNum, x, y, true]);
+        } catch (ventError) {
+          console.error(`❌ Error creating gas vent ${i + 1}:`, ventError);
+          throw ventError;
+        }
       }
     }
+    console.log(`⛽ Created ${gasVents.length} randomized gas vents`);
     
-    console.log('Assigning initial territories to players (3 per player)');
-    // Assign initial territories to players - distributed across the 8x12 map
+    // Assign initial territories to players - truly randomized positions
     const assignedTiles = [...gasVents];
     
     for (let i = 0; i < players.length; i++) {
       const player = players[i];
-      const gasType = ['green', 'yellow', 'toxic'][i % 3]; // Distribute gas types evenly
-      console.log(`Assigning territories to player ${player} with ${gasType} gas type`);
+      const gasType = ['green', 'yellow', 'toxic'][getRandomInt(3)]; // Random gas type too
       
-      // Give each player 3 starting territories spread out
-      const startPositions = [
-        // Distribute players around the edges
-        { x: 1 + (i * 2) % 10, y: 1 },
-        { x: 1 + (i * 2) % 10, y: 3 },
-        { x: 1 + (i * 2) % 10, y: 5 }
-      ];
-      
+      // Give each player 3 starting territories in random positions
       for (let j = 0; j < 3; j++) {
-        let x = startPositions[j].x;
-        let y = startPositions[j].y;
+        let x: number, y: number, posKey: string;
+        let attempts = 0;
         
-        // Make sure we don't overlap with gas vents or other assigned tiles
-        let tries = 0;
-        while (assignedTiles.some(tile => tile.x === x && tile.y === y) && tries < 20) {
-          x = seededRandom(12);
-          y = seededRandom(8);
-          tries++;
-        }
+        do {
+          x = getRandomInt(12);
+          y = getRandomInt(8);
+          posKey = `${x},${y}`;
+          attempts++;
+        } while (assignedTiles.some(tile => tile.x === x && tile.y === y) && attempts < 50);
         
-        assignedTiles.push({ x, y });
-        console.log(`Creating territory for player ${player} at (${x}, ${y})`);
-        
-        try {
-          // Create territory for player
-          await query(`
-            INSERT INTO game_tiles 
-              (game_instance_id, x_coord, y_coord, owner_id, gas_type) 
-            VALUES 
-              ($1, $2, $3, $4, $5)
-          `, [gameIdNum, x, y, player, gasType]);
-          console.log(`Territory ${j + 1} for player ${player} created successfully`);
-        } catch (territoryError) {
-          console.error(`Error creating territory for player ${player}:`, territoryError);
-          throw territoryError;
+        if (attempts < 50) {
+          assignedTiles.push({ x, y });
+          
+          try {
+            // Create territory for player
+            await query(`
+              INSERT INTO game_tiles 
+                (game_instance_id, x_coord, y_coord, owner_id, gas_type) 
+              VALUES 
+                ($1, $2, $3, $4, $5)
+            `, [gameIdNum, x, y, player, gasType]);
+          } catch (territoryError) {
+            console.error(`❌ Error creating territory for player ${player}:`, territoryError);
+            throw territoryError;
+          }
         }
       }
       
-      console.log(`Updating territory count for player ${player}`);
       try {
         // Update player's territory count
         await query(`
@@ -133,14 +124,13 @@ export async function startGame(gameId: number | string) {
           SET territories_count = 3 
           WHERE game_instance_id = $1 AND player_id = $2
         `, [gameIdNum, player]);
-        console.log(`Territory count updated for player ${player}`);
       } catch (updateError) {
-        console.error(`Error updating territory count for player ${player}:`, updateError);
+        console.error(`❌ Error updating territory count for player ${player}:`, updateError);
         throw updateError;
       }
     }
+    console.log(`🏠 Assigned ${players.length * 3} starting territories`);
     
-    console.log('Creating remaining empty tiles for 8x12 grid');
     // Create remaining empty tiles (8x12 = 96 total tiles)
     let emptyTilesCreated = 0;
     for (let x = 0; x < 12; x++) {
@@ -155,17 +145,17 @@ export async function startGame(gameId: number | string) {
             `, [gameIdNum, x, y]);
             emptyTilesCreated++;
           } catch (emptyTileError) {
-            console.error(`Error creating empty tile at (${x}, ${y}):`, emptyTileError);
+            console.error(`❌ Error creating empty tile at (${x}, ${y}):`, emptyTileError);
             // Continue with other tiles instead of throwing
           }
         }
       }
     }
-    console.log(`Created ${emptyTilesCreated} empty tiles`);
+    console.log(`📍 Created ${emptyTilesCreated} empty territories`);
     
     // If game has bots, schedule their actions to start immediately
     if (hasBots) {
-      console.log(`Game ${gameIdNum} has bots - will schedule bot actions`);
+      console.log(`🤖 AI bots will begin actions in 5 seconds`);
       // Start AI actions immediately
       setTimeout(() => {
         fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/games/${gameIdNum}/ai-actions`, {
@@ -175,10 +165,10 @@ export async function startGame(gameId: number | string) {
       }, 5000); // Start AI after 5 seconds
     }
     
-    console.log(`Game ${gameIdNum} started successfully with ${assignedTiles.length} total tiles (${96 - emptyTilesCreated} assigned, ${emptyTilesCreated} empty)`);
+    console.log(`✅ Game ${gameIdNum} started successfully (96 tiles total)`);
     return true;
   } catch (error) {
-    console.error('Error starting game:', error);
+    console.error('❌ Error starting game:', error);
     throw error;
   }
 } 

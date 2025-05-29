@@ -4,28 +4,19 @@ import { ensureTablesExist } from '../../../../lib/db';
 // Force dynamic rendering for database operations
 export const dynamic = 'force-dynamic';
 
-// Database initialization endpoint using Neon serverless Postgres
+// Initialize database tables
 export async function POST(request: NextRequest) {
   try {
-    console.log('[DB-INIT] Initializing Neon database schema...');
-
-    // Use the proper Neon database initialization
     await ensureTablesExist();
-
-    console.log('[DB-INIT] Database schema initialized successfully');
-
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Neon database schema initialized successfully' 
+    
+    return NextResponse.json({
+      success: true,
+      message: 'Database tables initialized successfully'
     });
-
-  } catch (error: any) {
-    console.error('[DB-INIT] Database initialization failed:', error.message);
+  } catch (error) {
+    console.error('Error initializing database:', error);
     return NextResponse.json(
-      { 
-        error: 'Failed to initialize database schema',
-        message: error.message 
-      },
+      { error: 'Failed to initialize database' },
       { status: 500 }
     );
   }

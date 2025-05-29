@@ -515,21 +515,29 @@ export default function GameBoard({
         <h3 className="text-lg font-semibold text-green-400 mb-3">🎯 Game Objectives</h3>
         <div className="space-y-2 text-sm">
           <div className="text-green-300">
-            <strong>Victory Condition:</strong> Control 15+ territories to win!
+            <strong>🎯 Victory Condition:</strong> Control 40+ territories to win! (42% of the map)
           </div>
           <div className="text-blue-300">
-            <strong>Gas System:</strong> 
+            <strong>⚡ Turn-Based System:</strong> 
+            <ul className="ml-4 mt-1 space-y-1 list-disc">
+              <li>Simple 5-second cooldown between actions (spam prevention)</li>
+              <li>No complex turn timers - play at your own pace</li>
+              <li>Each action costs gas: Emit (10), Bomb (25), Defend (15)</li>
+            </ul>
+          </div>
+          <div className="text-yellow-300">
+            <strong>💨 Gas System:</strong> 
             <ul className="ml-4 mt-1 space-y-1 list-disc">
               <li>+3 gas every 30 seconds (base regeneration)</li>
               <li>Control <span className="text-red-400">⛽</span> gas vents for +2 extra gas per vent per 30s</li>
               <li>Gas vents also give +5 gas bonus per vent after each action</li>
             </ul>
           </div>
-          <div className="text-yellow-300">
-            <strong>Strategy Tips:</strong>
+          <div className="text-purple-300">
+            <strong>🎮 Strategy Tips:</strong>
             <ul className="ml-4 mt-1 space-y-1 list-disc">
               <li>Prioritize gas vents for resource advantage</li>
-              <li>Expand early to claim territory</li>
+              <li>Random map each game - adapt your strategy!</li>
               <li>Use defense to protect key positions</li>
               <li>Watch for 🤖 AI player movements</li>
             </ul>

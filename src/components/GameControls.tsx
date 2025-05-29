@@ -29,26 +29,26 @@ const GameControls = ({
     emit: {
       name: 'Release Gas',
       cost: 10,
-      cooldown: 10,
+      cooldown: 5, // Simple 5-second spam prevention
       color: 'green',
       icon: 'M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z',
-      description: 'Attack or claim adjacent territories'
+      description: 'Quick attack or expansion (10 gas, 5s cooldown)'
     },
     bomb: {
       name: 'Gas Bomb',
       cost: 25,
-      cooldown: 45,
+      cooldown: 5, // Same cooldown for all actions
       color: 'red',
       icon: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z',
-      description: 'Powerful area attack'
+      description: 'Powerful area attack (25 gas, 5s cooldown)'
     },
     defend: {
       name: 'Boost Defense',
       cost: 15,
-      cooldown: 30,
+      cooldown: 5, // Same cooldown for all actions
       color: 'blue',
       icon: 'M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z',
-      description: 'Temporarily boost territory defense'
+      description: 'Temporarily boost territory defense (15 gas, 5s cooldown)'
     }
   };
 

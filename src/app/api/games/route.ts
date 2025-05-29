@@ -67,9 +67,7 @@ export async function GET(request: NextRequest) {
 // Create a new game
 export async function POST(request: NextRequest) {
   try {
-    console.log('Game creation API called');
     const body = await request.json();
-    console.log('Request body:', body);
     
     const { 
       playerId, 
@@ -80,16 +78,9 @@ export async function POST(request: NextRequest) {
       gameDuration = 30
     } = body;
     
-    console.log('Parsed parameters:', { 
-      playerId, 
-      maxPlayers, 
-      includeBots, 
-      botCount,
-      gameDuration 
-    });
+    console.log(`🎮 Creating game for player ${playerId} (${maxPlayers} max, ${includeBots ? `${botCount} bots` : 'no bots'}, ${gameDuration}min)`);
     
     if (!playerId) {
-      console.error('Missing playerId in request');
       return NextResponse.json(
         { error: 'Player ID is required' },
         { status: 400 }
@@ -98,7 +89,6 @@ export async function POST(request: NextRequest) {
     
     // Validate inputs
     if (maxPlayers < 2 || maxPlayers > 6) {
-      console.error('Invalid maxPlayers:', maxPlayers);
       return NextResponse.json(
         { error: 'Max players must be between 2 and 6' },
         { status: 400 }
@@ -106,37 +96,30 @@ export async function POST(request: NextRequest) {
     }
     
     if (includeBots && (botCount < 1 || botCount >= maxPlayers)) {
-      console.error('Invalid botCount:', botCount, 'maxPlayers:', maxPlayers);
       return NextResponse.json(
         { error: 'Bot count must be at least 1 and less than max players' },
         { status: 400 }
       );
     }
     
-    console.log('Fetching active game session');
     // Get current active session (or create one if none exists)
     let sessionResult = await query<{id: number, season_id: number, status: string}>(`
       SELECT id FROM game_sessions WHERE status = $1 ORDER BY start_time DESC LIMIT 1
     `, ['active']);
     
-    console.log('Session query result:', sessionResult);
     let sessionId;
     
     if (!sessionResult.rows?.length) {
-      console.log('No active session found, creating a new one');
       // Create a new session if none exists
       const newSessionResult = await query<{id: number}>(`
         INSERT INTO game_sessions (season_id, status) VALUES ($1, $2) RETURNING id
       `, [1, 'active']); // Season 1
       
-      console.log('New session created:', newSessionResult);
       sessionId = newSessionResult.rows[0].id;
     } else {
       sessionId = sessionResult.rows[0].id;
-      console.log('Using existing session:', sessionId);
     }
     
-    console.log('Creating game instance');
     // Create game instance with custom options
     const gameResult = await query<{id: number}>(`
       INSERT INTO game_instances 
@@ -146,10 +129,8 @@ export async function POST(request: NextRequest) {
        RETURNING id
     `, [sessionId, 'pending', Math.floor(Math.random() * 1000000), maxPlayers, gameDuration]);
     
-    console.log('Game instance creation result:', gameResult);
     const gameId = gameResult.rows[0].id;
     
-    console.log('Adding creator as first player');
     // Add creator as first player
     await query(`
       INSERT INTO player_game_states 
@@ -160,13 +141,11 @@ export async function POST(request: NextRequest) {
     
     // Add bot players if requested
     if (includeBots && botCount > 0) {
-      console.log(`Adding ${botCount} bot players`);
       // First, create bot players in the players table if they don't exist
       for (let i = 0; i < botCount; i++) {
         const botName = `AI Player ${i + 1}`;
         const botAddress = `bot-${Math.floor(Math.random() * 10000)}-${i}`;
         
-        console.log(`Processing bot ${i+1}: ${botName}`);
         // Check if this bot already exists
         const botResult = await query<{id: number}>(`
           SELECT id FROM players WHERE username = $1 AND wallet_address LIKE 'bot-%'
@@ -175,7 +154,6 @@ export async function POST(request: NextRequest) {
         let botId;
         
         if (botResult.rowCount === 0) {
-          console.log('Creating new bot player');
           // Create new bot player
           const newBotResult = await query<{id: number}>(`
             INSERT INTO players (wallet_address, username, last_active, is_bot) 
@@ -184,13 +162,10 @@ export async function POST(request: NextRequest) {
           `, [botAddress, botName]);
           
           botId = newBotResult.rows[0].id;
-          console.log('New bot created with ID:', botId);
         } else {
           botId = botResult.rows[0].id;
-          console.log('Using existing bot with ID:', botId);
         }
         
-        console.log('Adding bot to game');
         // Add bot to game
         await query(`
           INSERT INTO player_game_states 
@@ -204,11 +179,10 @@ export async function POST(request: NextRequest) {
       const totalPlayers = 1 + botCount; // Human creator + bots
       
       if (totalPlayers >= maxPlayers) {
-        console.log('Auto-starting game with bots');
+        console.log(`🚀 Auto-starting game ${gameId} with ${botCount} AI players`);
         // Start the game with bots
         await startGame(gameId);
         
-        console.log('Game started with bots, returning success response');
         return NextResponse.json({ 
           success: true, 
           gameId: String(gameId),
@@ -218,7 +192,7 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    console.log('Game created successfully, returning response');
+    console.log(`✅ Game ${gameId} created, waiting for players`);
     return NextResponse.json({ 
       success: true, 
       gameId: String(gameId),
@@ -226,7 +200,7 @@ export async function POST(request: NextRequest) {
       gameStarted: false
     });
   } catch (error) {
-    console.error('Error creating game:', error);
+    console.error('❌ Error creating game:', error);
     
     // Enhanced error logging with stack trace
     if (error instanceof Error) {

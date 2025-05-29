@@ -12,20 +12,16 @@ export async function POST(
   try {
     const gameId = params.id;
     
-    console.log(`[AI-ACTIONS] Processing AI actions for game ${gameId}`);
-    
     // First check if game is active
     const gameResult = await query(`
       SELECT status FROM game_instances WHERE id = $1
     `, [gameId]);
     
     if (gameResult.rowCount === 0) {
-      console.log(`[AI-ACTIONS] Game ${gameId} not found`);
       return NextResponse.json({ message: 'Game not found', actionsPerformed: 0 });
     }
     
     if (gameResult.rows[0].status !== 'active') {
-      console.log(`[AI-ACTIONS] Game ${gameId} is not active (status: ${gameResult.rows[0].status})`);
       return NextResponse.json({ message: `Game is ${gameResult.rows[0].status}, not processing AI actions`, actionsPerformed: 0 });
     }
     
@@ -44,60 +40,19 @@ export async function POST(
     
     const aiPlayers = aiPlayersResult.rows;
     
-    console.log(`[AI-ACTIONS] Found ${aiPlayers.length} AI players in game ${gameId}`);
-    
-    // Also check all players to see if there are any bots
-    const allPlayersResult = await query(`
-      SELECT 
-        p.id,
-        p.username,
-        p.is_bot,
-        pgs.gas_units
-      FROM players p
-      INNER JOIN player_game_states pgs ON p.id = pgs.player_id
-      WHERE pgs.game_instance_id = $1
-    `, [gameId]);
-    
-    console.log(`[AI-ACTIONS] All players in game ${gameId}:`, allPlayersResult.rows.map(p => ({
-      id: p.id,
-      username: p.username,
-      isBot: p.is_bot,
-      gas: p.gas_units
-    })));
-    
     if (aiPlayers.length === 0) {
-      console.log(`[AI-ACTIONS] No AI players found in game ${gameId}`);
       return NextResponse.json({ message: 'No AI players in this game', actionsPerformed: 0 });
     }
     
     let actionsPerformed = 0;
     
     for (const aiPlayer of aiPlayers) {
-      console.log(`[AI-ACTIONS] Processing AI player ${aiPlayer.username} (ID: ${aiPlayer.id})`);
-      console.log(`[AI-ACTIONS] AI has ${aiPlayer.gas_units} gas and ${aiPlayer.territories_count} territories`);
-      
-      // Check if AI can perform an action (cooldown check)
-      const now = new Date();
-      const lastActionTime = aiPlayer.last_action_time ? new Date(aiPlayer.last_action_time) : null;
-      
-      // AI has very short cooldowns to make game dynamic
-      const aiCooldown = 8 * 1000; // 8 seconds between AI actions
-      
-      if (lastActionTime) {
-        const timeSinceLastAction = now.getTime() - lastActionTime.getTime();
+      // Simple cooldown check for AI - 8 seconds between actions
+      if (aiPlayer.last_action_time) {
+        const lastActionTime = new Date(aiPlayer.last_action_time);
+        const timeSinceLastAction = Date.now() - lastActionTime.getTime();
         
-        // Safety check - if last action time is unreasonable, reset it
-        if (timeSinceLastAction < 0 || timeSinceLastAction > 3600000) {
-          console.log(`[AI-ACTIONS] FIXING: AI ${aiPlayer.username} has unreasonable cooldown (${Math.floor(timeSinceLastAction / 1000)}s), resetting`);
-          await query(`
-            UPDATE player_game_states 
-            SET last_action_time = NULL
-            WHERE game_instance_id = $1 AND player_id = $2
-          `, [gameId, aiPlayer.id]);
-          // Allow AI to proceed
-        } else if (timeSinceLastAction < aiCooldown) {
-          const remainingCooldown = Math.ceil((aiCooldown - timeSinceLastAction) / 1000);
-          console.log(`[AI-ACTIONS] AI ${aiPlayer.username} on cooldown for ${remainingCooldown}s`);
+        if (timeSinceLastAction < 8000) {
           continue; // Skip this AI, still on cooldown
         }
       }
@@ -111,11 +66,7 @@ export async function POST(
       
       const aiTerritories = territoriesResult.rows;
       
-      console.log(`[AI-ACTIONS] AI ${aiPlayer.username} owns ${aiTerritories.length} territories`);
-      
       if (aiTerritories.length === 0) {
-        console.log(`[AI-ACTIONS] AI ${aiPlayer.username} has no territories, attempting first move`);
-        
         // AI first move - find any unclaimed, non-gas-vent tile
         const allTilesResult = await query(`
           SELECT x_coord, y_coord, owner_id, is_gas_vent
@@ -129,8 +80,6 @@ export async function POST(
         
         if (unclaimedTiles.length > 0 && aiPlayer.gas_units >= 10) {
           const targetTile = unclaimedTiles[0]; // Pick first available
-          
-          console.log(`[AI-ACTIONS] AI ${aiPlayer.username} making first move at (${targetTile.x_coord}, ${targetTile.y_coord})`);
           
           try {
             const actionResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/games/${gameId}/actions`, {
@@ -149,15 +98,10 @@ export async function POST(
             
             if (actionResponse.ok && actionResult.success) {
               actionsPerformed++;
-              console.log(`[AI-ACTIONS] ✅ AI ${aiPlayer.username} successfully made first move`);
-            } else {
-              console.log(`[AI-ACTIONS] ❌ AI ${aiPlayer.username} first move failed: ${actionResult.error || 'Unknown error'}`);
             }
           } catch (error) {
             console.error(`[AI-ACTIONS] Error executing AI first move for ${aiPlayer.username}:`, error);
           }
-        } else {
-          console.log(`[AI-ACTIONS] AI ${aiPlayer.username} cannot make first move - no tiles available or insufficient gas`);
         }
         
         continue; // Move to next AI player
@@ -176,10 +120,7 @@ export async function POST(
         });
       });
       
-      console.log(`[AI-ACTIONS] AI ${aiPlayer.username} has ${possibleTargets.size} possible targets`);
-      
       if (possibleTargets.size === 0) {
-        console.log(`[AI-ACTIONS] AI ${aiPlayer.username} has no valid targets`);
         continue;
       }
       
@@ -198,8 +139,6 @@ export async function POST(
       
       const targetTiles = targetTilesResult.rows;
       
-      console.log(`[AI-ACTIONS] AI ${aiPlayer.username} analyzing ${targetTiles.length} target tiles`);
-      
       // AI Strategy: Prioritize gas vents > unclaimed tiles > enemy tiles
       let bestTarget = null;
       let actionType = 'emit';
@@ -209,7 +148,6 @@ export async function POST(
       if (gasVentTiles.length > 0 && aiPlayer.gas_units >= 25) {
         bestTarget = gasVentTiles[Math.floor(Math.random() * gasVentTiles.length)];
         actionType = 'bomb'; // Use bomb for important targets
-        console.log(`[AI-ACTIONS] AI ${aiPlayer.username} targeting gas vent at (${bestTarget.x_coord}, ${bestTarget.y_coord})`);
       }
       
       // 2. Look for unclaimed tiles
@@ -217,8 +155,7 @@ export async function POST(
         const unclaimedTiles = targetTiles.filter(t => !t.owner_id);
         if (unclaimedTiles.length > 0) {
           bestTarget = unclaimedTiles[Math.floor(Math.random() * unclaimedTiles.length)];
-          actionType = aiPlayer.gas_units >= 25 && Math.random() > 0.7 ? 'bomb' : 'emit';
-          console.log(`[AI-ACTIONS] AI ${aiPlayer.username} targeting unclaimed tile at (${bestTarget.x_coord}, ${bestTarget.y_coord})`);
+          actionType = aiPlayer.gas_units >= 25 && Math.random() > 0.8 ? 'bomb' : 'emit'; // Reduced bomb frequency
         }
       }
       
@@ -227,9 +164,8 @@ export async function POST(
         const enemyTiles = targetTiles.filter(t => t.owner_id && t.owner_id !== aiPlayer.id && (t.defense_bonus || 0) < 30);
         if (enemyTiles.length > 0) {
           bestTarget = enemyTiles[Math.floor(Math.random() * enemyTiles.length)];
-          // Use bomb for attacks more often
-          actionType = (aiPlayer.gas_units >= 25 && Math.random() > 0.5) ? 'bomb' : 'emit';
-          console.log(`[AI-ACTIONS] AI ${aiPlayer.username} attacking enemy tile at (${bestTarget.x_coord}, ${bestTarget.y_coord})`);
+          // Use bomb for attacks less often
+          actionType = (aiPlayer.gas_units >= 25 && Math.random() > 0.7) ? 'bomb' : 'emit'; // Reduced bomb frequency
         }
       }
       
@@ -240,12 +176,10 @@ export async function POST(
           const territoryToDefend = vulnerableTerritories[Math.floor(Math.random() * vulnerableTerritories.length)];
           bestTarget = { x_coord: territoryToDefend.x_coord, y_coord: territoryToDefend.y_coord };
           actionType = 'defend';
-          console.log(`[AI-ACTIONS] AI ${aiPlayer.username} defending territory at (${bestTarget.x_coord}, ${bestTarget.y_coord})`);
         }
       }
       
       if (!bestTarget) {
-        console.log(`[AI-ACTIONS] AI ${aiPlayer.username} found no suitable action`);
         continue; // No valid action for this AI
       }
       
@@ -253,14 +187,11 @@ export async function POST(
       const gasCost = actionType === 'emit' ? 10 : actionType === 'bomb' ? 25 : 15;
       
       if (aiPlayer.gas_units < gasCost) {
-        console.log(`[AI-ACTIONS] AI ${aiPlayer.username} has insufficient gas (${aiPlayer.gas_units} < ${gasCost})`);
         continue; // Not enough gas
       }
       
       // Execute the AI action
       try {
-        console.log(`[AI-ACTIONS] AI ${aiPlayer.username} executing ${actionType} at (${bestTarget.x_coord}, ${bestTarget.y_coord}) for ${gasCost} gas`);
-        
         const actionResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/games/${gameId}/actions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -277,19 +208,11 @@ export async function POST(
         
         if (actionResponse.ok && actionResult.success) {
           actionsPerformed++;
-          console.log(`[AI-ACTIONS] ✅ AI ${aiPlayer.username} successfully performed ${actionType} at (${bestTarget.x_coord}, ${bestTarget.y_coord})`);
-          if (actionResult.message) {
-            console.log(`[AI-ACTIONS] Result: ${actionResult.message}`);
-          }
-        } else {
-          console.log(`[AI-ACTIONS] ❌ AI ${aiPlayer.username} action failed: ${actionResult.error || 'Unknown error'}`);
         }
       } catch (error) {
         console.error(`[AI-ACTIONS] Error executing AI action for ${aiPlayer.username}:`, error);
       }
     }
-    
-    console.log(`[AI-ACTIONS] Completed AI processing for game ${gameId}: ${actionsPerformed} actions performed`);
     
     return NextResponse.json({ 
       message: `Processed ${actionsPerformed} AI actions`,

@@ -63,44 +63,18 @@ export async function POST(
       );
     }
     
-    // Check cooldown
+    // Check cooldown (simplified for turn-based gameplay)
     const now = new Date();
-    const lastActionTime = playerState.last_action_time ? new Date(playerState.last_action_time) : null;
     
-    console.log(`Cooldown check for player ${playerId}:`);
-    console.log(`  Current time: ${now.toISOString()}`);
-    console.log(`  Last action time: ${lastActionTime ? lastActionTime.toISOString() : 'never'}`);
-    
-    if (lastActionTime) {
+    // For turn-based gameplay, we'll use a simple 5-second cooldown to prevent spam
+    if (playerState.last_action_time) {
+      const lastActionTime = new Date(playerState.last_action_time);
       const timeSinceLastAction = now.getTime() - lastActionTime.getTime();
       
-      let requiredCooldown = 0;
-      if (actionType === 'emit') {
-        requiredCooldown = 10 * 1000; // 10 seconds
-      } else if (actionType === 'bomb') {
-        requiredCooldown = 45 * 1000; // 45 seconds
-      } else if (actionType === 'defend') {
-        requiredCooldown = 30 * 1000; // 30 seconds
-      }
-      
-      console.log(`  Time since last action: ${timeSinceLastAction}ms (${Math.floor(timeSinceLastAction / 1000)}s)`);
-      console.log(`  Required cooldown: ${requiredCooldown}ms (${Math.floor(requiredCooldown / 1000)}s)`);
-      
-      // Safety check - if last action time is in the future or more than 1 hour ago, reset it
-      if (timeSinceLastAction < 0 || timeSinceLastAction > 3600000) {
-        console.log(`  FIXING: Unreasonable cooldown detected (${Math.floor(timeSinceLastAction / 1000)}s), resetting player's last action time`);
-        await query(`
-          UPDATE player_game_states 
-          SET last_action_time = NULL
-          WHERE game_instance_id = $1 AND player_id = $2
-        `, [gameId, playerId]);
-        // Allow action to proceed
-      } else if (timeSinceLastAction < requiredCooldown) {
-        const remainingCooldown = Math.ceil((requiredCooldown - timeSinceLastAction) / 1000);
-        console.log(`  Cooldown remaining: ${remainingCooldown}s`);
-        
+      // Simple 5-second spam prevention
+      if (timeSinceLastAction < 5000) {
         return NextResponse.json(
-          { error: `Action on cooldown for ${remainingCooldown} more seconds` },
+          { error: 'Please wait 5 seconds between actions' },
           { status: 400 }
         );
       }
@@ -174,7 +148,7 @@ export async function POST(
             UPDATE player_game_states 
             SET 
               gas_units = gas_units - $1,
-              last_action_time = NOW()
+              last_action_time = CURRENT_TIMESTAMP
             WHERE 
               game_instance_id = $2 AND 
               player_id = $3
@@ -485,7 +459,7 @@ export async function POST(
           UPDATE player_game_states 
           SET 
             gas_units = gas_units - $1,
-            last_action_time = NOW()
+            last_action_time = CURRENT_TIMESTAMP
           WHERE 
             game_instance_id = $2 AND 
             player_id = $3
@@ -499,15 +473,15 @@ export async function POST(
             ($1, $2, $3, $4, $5, $6, $7)
         `, [gameId, playerId, actionType, parseInt(targetX), parseInt(targetY), gasSpent, actionResult ? 'success' : 'fail']);
         
-        // Check for victory condition (15+ territories for balanced gameplay on 96-tile map)
+        // Check for victory condition (40+ territories for balanced gameplay on 96-tile map)
         const victoryCheck = await query<{territories_count: number}>(`
           SELECT territories_count 
           FROM player_game_states 
           WHERE game_instance_id = $1 AND player_id = $2
         `, [gameId, playerId]);
         
-        if (victoryCheck.rows[0]?.territories_count >= 15) {
-          // Player has achieved dominance victory (15+ territories out of 96 total)
+        if (victoryCheck.rows[0]?.territories_count >= 40) {
+          // Player has achieved dominance victory (40+ territories out of 96 total = ~42%)
           await endGame(parseInt(gameId), playerId, 'dominance');
           message += ' 🎉 VICTORY! You have achieved territorial dominance!';
         }
