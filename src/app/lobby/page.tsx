@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
-import { normalize } from 'viem/ens';
 
 import GameHeader from '../../components/GameHeader';
 import CreateGameModal from '../../components/CreateGameModal';

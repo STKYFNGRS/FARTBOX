@@ -295,10 +295,10 @@ const OnlinePlayersComponent = withENSErrorBoundary(function OnlinePlayersInner(
     const fetchOnlinePlayers = async () => {
       try {
         setLoading(true);
-        const response = await fetch('/api/online-players');
+        const response = await fetch('/api/users/online');
         if (response.ok) {
           const data = await response.json();
-          setPlayers(data.players || []);
+          setPlayers(data || []);
         } else {
           console.error('Failed to fetch online players:', response.statusText);
         }
