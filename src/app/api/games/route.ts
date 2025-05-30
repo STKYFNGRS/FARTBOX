@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') || 'pending';
     const currentPlayerId = searchParams.get('playerId'); // Get current player ID if provided
     
-    // Allow multiple statuses - show pending and active games in lobby
+    // Allow multiple statuses - show pending and active games in lobby, but filter out old/stale games
     const statusFilter = status === 'pending' ? ['pending', 'active'] : [status];
     
     const gamesResult = await query<GameInstance & {player_count: string}>(`
@@ -31,8 +31,13 @@ export async function GET(request: NextRequest) {
         game_instances gi
       WHERE 
         gi.status = ANY($1)
+        AND (
+          gi.status = 'pending' OR 
+          (gi.status = 'active' AND gi.start_time > NOW() - INTERVAL '2 hours')
+        )
+        AND gi.created_at > NOW() - INTERVAL '24 hours'
       ORDER BY 
-        gi.id ASC
+        gi.id DESC
       LIMIT 20
     `, [statusFilter]);
     

@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAccount } from 'wagmi';
+import { useAccount, useEnsName, useEnsAvatar } from 'wagmi';
+import { normalize } from 'viem/ens';
 
 import GameHeader from '../../components/GameHeader';
 import CreateGameModal from '../../components/CreateGameModal';
+import OnlinePlayers from '../../components/lobby/OnlinePlayers';
 
 interface GameInfo {
   id: string;
@@ -22,6 +24,9 @@ interface ChatMessage {
   message: string;
   timestamp: Date;
   walletAddress: string;
+  displayName?: string;
+  ens_name?: string;
+  ens_avatar?: string;
   isBot?: boolean;
 }
 
@@ -37,6 +42,17 @@ export default function Lobby() {
   const { address, isConnected } = useAccount();
   const router = useRouter();
   
+  // Get ENS data for current user
+  const { data: ensName } = useEnsName({
+    address: address,
+    chainId: 1,
+  });
+  
+  const { data: ensAvatar } = useEnsAvatar({
+    name: ensName ? normalize(ensName) : undefined,
+    chainId: 1,
+  });
+  
   const [mounted, setMounted] = useState(false);
   const [games, setGames] = useState<GameInfo[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -46,8 +62,6 @@ export default function Lobby() {
   // Chat state
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
-  const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
-  const [selectedUser, setSelectedUser] = useState<OnlineUser | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   
   // Background effects
@@ -57,6 +71,18 @@ export default function Lobby() {
     if (!address) return;
     
     try {
+      // First update user with ENS data
+      await fetch('/api/users/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          walletAddress: address,
+          ensName,
+          ensAvatar
+        })
+      });
+
+      // Then authenticate
       const response = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -152,22 +178,6 @@ export default function Lobby() {
     }
   };
 
-  const fetchOnlineUsers = async () => {
-    try {
-      const response = await fetch('/api/users/online');
-      const data = await response.json();
-      
-      if (data.users) {
-        setOnlineUsers(data.users.map((user: any) => ({
-          ...user,
-          lastSeen: new Date(user.lastSeen)
-        })));
-      }
-    } catch (error) {
-      console.error('Error fetching online users:', error);
-    }
-  };
-
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -192,13 +202,12 @@ export default function Lobby() {
     if (isConnected && address) {
       authenticatePlayer();
     }
-  }, [isConnected, address]);
+  }, [isConnected, address, ensName, ensAvatar]);
 
   useEffect(() => {
     if (playerId) {
       fetchGames();
       fetchChatMessages();
-      fetchOnlineUsers();
     }
   }, [playerId]);
 
@@ -215,7 +224,6 @@ export default function Lobby() {
       if (playerId) {
         fetchGames();
         fetchChatMessages();
-        fetchOnlineUsers();
       }
     }, 5000);
 
@@ -279,39 +287,8 @@ export default function Lobby() {
       <div className="relative z-10 grid grid-cols-12 gap-6 p-6 min-h-[calc(100vh-80px)]">
         
         {/* Left Sidebar - Online Players */}
-        <div className="col-span-3 bg-black/40 backdrop-blur-md border border-green-500/20 rounded-lg p-4">
-          <h2 className="text-xl font-bold text-green-400 mb-4 flex items-center gap-2">
-            <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-            Online Players ({onlineUsers.length})
-          </h2>
-          
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {onlineUsers.map((user) => (
-              <div 
-                key={user.id}
-                className="flex items-center gap-3 p-2 rounded-lg bg-black/20 hover:bg-green-500/10 cursor-pointer transition-colors"
-                onClick={() => setSelectedUser(user)}
-              >
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                  user.isBot ? 'bg-purple-500/30' : 'bg-green-500/30'
-                }`}>
-                  {user.isBot ? '🤖' : '👤'}
-                </div>
-                <div className="flex-1">
-                  <div className="text-sm font-semibold text-green-300">
-                    {user.username || `Player ${user.id}`}
-                  </div>
-                  <div className="text-xs text-gray-400">
-                    {user.walletAddress ? 
-                      `${user.walletAddress.slice(0, 6)}...${user.walletAddress.slice(-4)}` :
-                      'No address'
-                    }
-                  </div>
-                </div>
-                <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-              </div>
-            ))}
-          </div>
+        <div className="col-span-3">
+          <OnlinePlayers />
         </div>
 
         {/* Center - Games List */}
@@ -397,7 +374,7 @@ export default function Lobby() {
               <div className="text-sm text-gray-400">Active Lobbies</div>
             </div>
             <div className="bg-black/40 backdrop-blur-md border border-green-500/20 rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-green-400">{onlineUsers.length}</div>
+              <div className="text-2xl font-bold text-green-400">-</div>
               <div className="text-sm text-gray-400">Players Online</div>
             </div>
             <div className="bg-black/40 backdrop-blur-md border border-green-500/20 rounded-lg p-4 text-center">
@@ -423,7 +400,7 @@ export default function Lobby() {
                   <span className={`font-semibold ${
                     message.isBot ? 'text-purple-400' : 'text-green-400'
                   }`}>
-                    {message.isBot ? '🤖 ' : ''}{message.username || 'Anonymous'}
+                    {message.isBot ? '🤖 ' : ''}{message.displayName || message.username || 'Anonymous'}
                   </span>
                   <span className="text-xs text-gray-500">
                     {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -468,52 +445,6 @@ export default function Lobby() {
             router.push(`/game/${gameId}`);
           }}
         />
-      )}
-
-      {/* User Profile Modal */}
-      {selectedUser && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="bg-gray-900/95 border border-green-500/30 rounded-lg p-6 max-w-md w-full mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-green-400">Player Profile</h3>
-              <button 
-                onClick={() => setSelectedUser(null)}
-                className="text-gray-400 hover:text-gray-300"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <div className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl ${
-                  selectedUser.isBot ? 'bg-purple-500/30' : 'bg-green-500/30'
-                }`}>
-                  {selectedUser.isBot ? '🤖' : '👤'}
-                </div>
-                <div>
-                  <div className="text-lg font-semibold text-green-300">
-                    {selectedUser.username || `Player ${selectedUser.id}`}
-                  </div>
-                  <div className="text-gray-400">
-                    {selectedUser.walletAddress || 'No address'}
-                  </div>
-                </div>
-              </div>
-              
-              <div className="pt-4 border-t border-green-500/20">
-                <div className="text-sm text-gray-400">
-                  {selectedUser.isBot ? 'AI Player' : 'Human Player'}
-                </div>
-                <div className="text-sm text-gray-400">
-                  Last seen: {selectedUser.lastSeen.toLocaleString()}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
     </main>
   );

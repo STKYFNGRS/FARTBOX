@@ -2,7 +2,6 @@
 
 import { useAppKit } from '@reown/appkit/react';
 import { useAccount, useEnsName, useEnsAvatar } from 'wagmi';
-import { base } from 'wagmi/chains';
 import { useState, useEffect } from 'react';
 
 interface ConnectButtonProps {
@@ -20,10 +19,10 @@ export function ConnectButton({ className }: ConnectButtonProps) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   
   // ALL WAGMI HOOKS
-  // Get ENS name with Base network configuration
+  // Get ENS name with Ethereum mainnet for proper ENS resolution
   const { data: ensName, isError: ensNameError, isLoading: ensNameLoading } = useEnsName({
     address: address,
-    chainId: base.id,
+    chainId: 1, // Ethereum mainnet for ENS
     query: {
       enabled: !!address && isConnected && mounted,
       retry: 1,
@@ -33,10 +32,10 @@ export function ConnectButton({ className }: ConnectButtonProps) {
     },
   });
   
-  // Get ENS avatar with Base network configuration
+  // Get ENS avatar with Ethereum mainnet for proper ENS resolution
   const { data: ensAvatar, isError: ensAvatarError } = useEnsAvatar({
     name: ensName || undefined,
-    chainId: base.id,
+    chainId: 1, // Ethereum mainnet for ENS
     query: {
       enabled: !!ensName && !ensNameError && mounted,
       retry: 1,

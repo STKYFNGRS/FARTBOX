@@ -18,6 +18,8 @@ export async function GET(request: NextRequest) {
         cm.created_at as timestamp,
         p.username,
         p.wallet_address,
+        p.ens_name,
+        p.ens_avatar,
         p.is_bot
       FROM chat_messages cm
       JOIN players p ON cm.player_id = p.id
@@ -26,9 +28,16 @@ export async function GET(request: NextRequest) {
       LIMIT $2
     `, [type, limit]);
     
+    // Process messages to include display names
+    const messagesWithDisplayNames = result.rows.map(msg => ({
+      ...msg,
+      displayName: msg.ens_name || msg.username || 
+        (msg.wallet_address ? `${msg.wallet_address.slice(0, 6)}...${msg.wallet_address.slice(-4)}` : 'Anonymous')
+    }));
+    
     return NextResponse.json({
       success: true,
-      messages: result.rows.reverse() // Reverse to show oldest first
+      messages: messagesWithDisplayNames.reverse() // Reverse to show oldest first
     });
   } catch (error) {
     console.error('Error fetching chat messages:', error);
