@@ -16,7 +16,7 @@ const effectiveProjectId = projectId || 'YOUR_PROJECT_ID_PLACEHOLDER';
 
 export const networks = [mainnet, base]; // Using mainnet and base
 
-//Set up the Wagmi Adapter - let AppKit handle RPC configuration
+//Set up the Wagmi Adapter with default configuration for better ENS support
 export const wagmiAdapter = new WagmiAdapter({
   storage: createStorage({
     storage: cookieStorage,

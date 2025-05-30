@@ -24,14 +24,25 @@ function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps
   const [profileData, setProfileData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   
+  // Re-enable ENS resolution with better error handling
   const { data: ensName } = useEnsName({
     address: player.wallet_address as `0x${string}`,
     chainId: 1,
+    query: {
+      retry: false,
+      staleTime: 300000,
+      enabled: isOpen, // Only fetch when modal is open
+    }
   });
   
   const { data: ensAvatar } = useEnsAvatar({
     name: ensName ? normalize(ensName) : undefined,
     chainId: 1,
+    query: {
+      retry: false,
+      staleTime: 300000,
+      enabled: !!ensName && isOpen,
+    }
   });
 
   // Fetch player's game stats
@@ -198,13 +209,14 @@ function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps
 }
 
 function PlayerAvatar({ player }: { player: OnlinePlayer }) {
-  // Simple ENS resolution with better error handling
+  // Re-enable ENS resolution with better error handling
   const { data: ensName } = useEnsName({
     address: player.wallet_address as `0x${string}`,
     chainId: 1,
     query: {
-      retry: 1,
-      staleTime: 60000, // Cache for 1 minute
+      retry: false, // Don't retry failed requests to avoid CCIP-v2 spam
+      staleTime: 300000, // Cache for 5 minutes
+      enabled: true, // Enable but with better error handling
     }
   });
   
@@ -212,8 +224,8 @@ function PlayerAvatar({ player }: { player: OnlinePlayer }) {
     name: ensName ? normalize(ensName) : undefined,
     chainId: 1,
     query: {
-      retry: 1,
-      staleTime: 60000,
+      retry: false,
+      staleTime: 300000,
       enabled: !!ensName, // Only fetch if we have an ENS name
     }
   });
@@ -221,7 +233,7 @@ function PlayerAvatar({ player }: { player: OnlinePlayer }) {
   const displayName = ensName || player.ens_name || player.username || 
     `${player.wallet_address.slice(0, 6)}...${player.wallet_address.slice(-4)}`;
   
-  // Try multiple avatar sources with fallbacks
+  // Use live ENS data first, fallback to stored data
   const avatarSrc = ensAvatar || player.ens_avatar;
   const fallbackLetter = displayName.charAt(0).toUpperCase();
 
@@ -287,9 +299,8 @@ export default function OnlinePlayers() {
   }, []);
 
   const handlePlayerClick = (player: OnlinePlayer) => {
-    if (player.wallet_address !== address) {
-      setSelectedPlayer(player);
-    }
+    // Allow clicking on any player for testing modal functionality
+    setSelectedPlayer(player);
   };
 
   if (loading) {
