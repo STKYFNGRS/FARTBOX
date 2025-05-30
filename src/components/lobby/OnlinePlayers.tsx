@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAccount } from 'wagmi';
+import { useAccount, useEnsName, useEnsAvatar } from 'wagmi';
+import { normalize } from 'viem/ens';
 import { ProfileCard } from 'ethereum-identity-kit';
 
 interface OnlinePlayer {
@@ -23,8 +24,16 @@ function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps
   const [profileData, setProfileData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   
-  // Disable ENS resolution completely to avoid CCIP-v2 production errors
-  // The ProfileCard from ethereum-identity-kit will handle ENS internally without our hooks
+  // Re-enable ENS resolution using same approach as ethereum-identity-kit ProfileCard
+  const { data: ensName } = useEnsName({
+    address: player.wallet_address as `0x${string}`,
+    chainId: 1, // Ethereum mainnet for ENS
+  });
+  
+  const { data: ensAvatar } = useEnsAvatar({
+    name: ensName ? normalize(ensName) : undefined,
+    chainId: 1,
+  });
 
   // Fetch player's game stats
   useEffect(() => {
@@ -52,7 +61,7 @@ function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps
     return null;
   }
 
-  const displayName = player.ens_name || player.username || 
+  const displayName = ensName || player.ens_name || player.username || 
     `${player.wallet_address.slice(0, 6)}...${player.wallet_address.slice(-4)}`;
 
   return (
@@ -190,13 +199,22 @@ function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps
 }
 
 function PlayerAvatar({ player }: { player: OnlinePlayer }) {
-  // Disable ENS resolution completely to avoid CCIP-v2 production errors
-  // Use only stored database data for avatars and names
-  const displayName = player.ens_name || player.username || 
+  // Re-enable ENS resolution using same approach as ethereum-identity-kit
+  const { data: ensName } = useEnsName({
+    address: player.wallet_address as `0x${string}`,
+    chainId: 1, // Ethereum mainnet for ENS
+  });
+  
+  const { data: ensAvatar } = useEnsAvatar({
+    name: ensName ? normalize(ensName) : undefined,
+    chainId: 1,
+  });
+
+  // Use live ENS data first (like ProfileCard does), fallback to stored data
+  const displayName = ensName || player.ens_name || player.username || 
     `${player.wallet_address.slice(0, 6)}...${player.wallet_address.slice(-4)}`;
   
-  // Use only stored ENS data from database
-  const avatarSrc = player.ens_avatar;
+  const avatarSrc = ensAvatar || player.ens_avatar;
   const fallbackLetter = displayName.charAt(0).toUpperCase();
 
   return (
@@ -221,6 +239,50 @@ function PlayerAvatar({ player }: { player: OnlinePlayer }) {
           {fallbackLetter}
         </span>
       )}
+    </div>
+  );
+}
+
+function PlayerListItem({ player, isCurrentUser, onPlayerClick }: { 
+  player: OnlinePlayer; 
+  isCurrentUser: boolean; 
+  onPlayerClick: (player: OnlinePlayer) => void;
+}) {
+  // Use live ENS data first if available (like ProfileCard does), fallback to stored
+  const { data: ensName } = useEnsName({
+    address: player.wallet_address as `0x${string}`,
+    chainId: 1,
+  });
+  
+  const displayName = ensName || player.ens_name || player.username || 
+    `${player.wallet_address.slice(0, 6)}...${player.wallet_address.slice(-4)}`;
+
+  return (
+    <div
+      className={`flex items-center gap-3 p-3 rounded-lg transition-all cursor-pointer ${
+        isCurrentUser 
+          ? 'bg-green-500/20 border border-green-500/50' 
+          : 'bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700/50 hover:border-green-500/30'
+      }`}
+      onClick={() => onPlayerClick(player)}
+    >
+      <PlayerAvatar player={player} />
+      
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className={`font-medium truncate ${
+            isCurrentUser ? 'text-green-300' : 'text-gray-300'
+          }`}>
+            {displayName}
+            {isCurrentUser && <span className="text-green-400 text-sm ml-1">(You)</span>}
+          </span>
+        </div>
+        <div className="text-xs text-gray-500 truncate">
+          {player.wallet_address.slice(0, 8)}...{player.wallet_address.slice(-6)}
+        </div>
+      </div>
+      
+      <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse flex-shrink-0"></div>
     </div>
   );
 }
@@ -295,37 +357,14 @@ export default function OnlinePlayers() {
           ) : (
             onlinePlayers.map((player) => {
               const isCurrentUser = player.wallet_address === address;
-              const displayName = player.ens_name || player.username || 
-                `${player.wallet_address.slice(0, 6)}...${player.wallet_address.slice(-4)}`;
               
               return (
-                <div
+                <PlayerListItem
                   key={player.id}
-                  className={`flex items-center gap-3 p-3 rounded-lg transition-all cursor-pointer ${
-                    isCurrentUser 
-                      ? 'bg-green-500/20 border border-green-500/50' 
-                      : 'bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700/50 hover:border-green-500/30'
-                  }`}
-                  onClick={() => handlePlayerClick(player)}
-                >
-                  <PlayerAvatar player={player} />
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className={`font-medium truncate ${
-                        isCurrentUser ? 'text-green-300' : 'text-gray-300'
-                      }`}>
-                        {displayName}
-                        {isCurrentUser && <span className="text-green-400 text-sm ml-1">(You)</span>}
-                      </span>
-                    </div>
-                    <div className="text-xs text-gray-500 truncate">
-                      {player.wallet_address.slice(0, 8)}...{player.wallet_address.slice(-6)}
-                    </div>
-                  </div>
-                  
-                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse flex-shrink-0"></div>
-                </div>
+                  player={player}
+                  isCurrentUser={isCurrentUser}
+                  onPlayerClick={handlePlayerClick}
+                />
               );
             })
           )}

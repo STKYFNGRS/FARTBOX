@@ -3,33 +3,6 @@ import { neon } from '@neondatabase/serverless';
 
 const sql = neon(process.env.DATABASE_URL!);
 
-// Simple ENS resolution cache to avoid repeated requests
-const ensCache = new Map<string, { name?: string; avatar?: string; timestamp: number }>();
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-
-async function resolveENSName(address: string): Promise<{ name?: string; avatar?: string }> {
-  try {
-    // Check cache first
-    const cached = ensCache.get(address);
-    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-      return { name: cached.name, avatar: cached.avatar };
-    }
-
-    // Simple fallback: try to get from database stored values
-    // In production, you could implement server-side ENS resolution here
-    // For now, return empty to avoid CCIP-v2 errors
-    const result = { name: undefined, avatar: undefined };
-    
-    // Cache the result
-    ensCache.set(address, { ...result, timestamp: Date.now() });
-    
-    return result;
-  } catch (error) {
-    console.error('ENS resolution error:', error);
-    return { name: undefined, avatar: undefined };
-  }
-}
-
 // Force dynamic rendering for database operations
 export const dynamic = 'force-dynamic';
 
@@ -41,25 +14,24 @@ export async function GET(request: NextRequest) {
     
     const result = await sql`
       SELECT DISTINCT 
-        u.id,
-        u.wallet_address,
-        u.username,
-        u.ens_name,
-        u.ens_avatar,
-        u.last_active
-      FROM users u
-      WHERE u.last_active > ${tenMinutesAgo.toISOString()}
-      ORDER BY u.last_active DESC
+        p.id,
+        p.wallet_address,
+        p.username,
+        p.ens_name,
+        p.ens_avatar,
+        p.last_active
+      FROM players p
+      WHERE p.last_active > ${tenMinutesAgo.toISOString()}
+      ORDER BY p.last_active DESC
     `;
 
-    // For production stability, use stored ENS data only
-    // You can implement background ENS updates separately
+    // Return stored ENS data as fallback, frontend will do live resolution like ethereum-identity-kit
     const onlineUsers = result.map(user => ({
       id: user.id,
       wallet_address: user.wallet_address,
       username: user.username,
-      ens_name: user.ens_name, // Use stored data
-      ens_avatar: user.ens_avatar, // Use stored data
+      ens_name: user.ens_name, // Stored fallback data
+      ens_avatar: user.ens_avatar, // Stored fallback data
       last_active: user.last_active,
     }));
 
