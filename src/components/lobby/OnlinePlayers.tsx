@@ -198,36 +198,53 @@ function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps
 }
 
 function PlayerAvatar({ player }: { player: OnlinePlayer }) {
-  // Simple ENS resolution - always try to get fresh data
+  // Simple ENS resolution with better error handling
   const { data: ensName } = useEnsName({
     address: player.wallet_address as `0x${string}`,
     chainId: 1,
+    query: {
+      retry: 1,
+      staleTime: 60000, // Cache for 1 minute
+    }
   });
   
   const { data: ensAvatar } = useEnsAvatar({
     name: ensName ? normalize(ensName) : undefined,
     chainId: 1,
+    query: {
+      retry: 1,
+      staleTime: 60000,
+      enabled: !!ensName, // Only fetch if we have an ENS name
+    }
   });
 
   const displayName = ensName || player.ens_name || player.username || 
     `${player.wallet_address.slice(0, 6)}...${player.wallet_address.slice(-4)}`;
   
+  // Try multiple avatar sources with fallbacks
   const avatarSrc = ensAvatar || player.ens_avatar;
+  const fallbackLetter = displayName.charAt(0).toUpperCase();
 
   return (
-    <div className="w-8 h-8 rounded-full overflow-hidden bg-green-500/30 flex items-center justify-center">
+    <div className="w-8 h-8 rounded-full overflow-hidden bg-green-500/30 flex items-center justify-center border border-green-500/50">
       {avatarSrc ? (
         <img 
           src={avatarSrc} 
-          alt="Profile" 
+          alt={`${displayName} avatar`}
           className="w-full h-full object-cover"
           onError={(e) => {
-            (e.target as HTMLImageElement).style.display = 'none';
+            const target = e.target as HTMLImageElement;
+            target.style.display = 'none';
+            // Show fallback letter when image fails
+            const parent = target.parentElement;
+            if (parent) {
+              parent.innerHTML = `<span class="text-green-400 text-xs font-bold">${fallbackLetter}</span>`;
+            }
           }}
         />
       ) : (
         <span className="text-green-400 text-xs font-bold">
-          {displayName.charAt(0).toUpperCase()}
+          {fallbackLetter}
         </span>
       )}
     </div>
