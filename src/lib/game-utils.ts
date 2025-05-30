@@ -32,6 +32,24 @@ export async function startGame(gameId: number | string) {
     
     console.log(`👥 ${players.length} players (${hasBots ? 'with AI bots' : 'humans only'})`);
     
+    // Set turn order and initialize current turn to first player
+    for (let i = 0; i < players.length; i++) {
+      await query(`
+        UPDATE player_game_states 
+        SET turn_order = $1 
+        WHERE game_instance_id = $2 AND player_id = $3
+      `, [i + 1, gameIdNum, players[i]]);
+    }
+    
+    // Set current turn to first player (lowest turn order)
+    await query(`
+      UPDATE game_instances 
+      SET current_turn_player_id = $1 
+      WHERE id = $2
+    `, [players[0], gameIdNum]);
+    
+    console.log(`🎯 Turn order set, starting with player ${players[0]}`);
+    
     // Initialize map with proper 8x12 grid and randomized gas vents
     const mapSeed = Math.floor(Math.random() * 1000000);
     
@@ -62,16 +80,16 @@ export async function startGame(gameId: number | string) {
       } while (usedPositions.has(posKey) && attempts < 50);
       
       if (attempts < 50) {
-        gasVents.push({ x, y });
+      gasVents.push({ x, y });
         usedPositions.add(posKey);
-        
+      
         try {
-          await query(`
-            INSERT INTO game_tiles 
-              (game_instance_id, x_coord, y_coord, is_gas_vent) 
-            VALUES 
-              ($1, $2, $3, $4)
-          `, [gameIdNum, x, y, true]);
+      await query(`
+        INSERT INTO game_tiles 
+          (game_instance_id, x_coord, y_coord, is_gas_vent) 
+        VALUES 
+          ($1, $2, $3, $4)
+      `, [gameIdNum, x, y, true]);
         } catch (ventError) {
           console.error(`❌ Error creating gas vent ${i + 1}:`, ventError);
           throw ventError;
@@ -100,16 +118,16 @@ export async function startGame(gameId: number | string) {
         } while (assignedTiles.some(tile => tile.x === x && tile.y === y) && attempts < 50);
         
         if (attempts < 50) {
-          assignedTiles.push({ x, y });
-          
+        assignedTiles.push({ x, y });
+        
           try {
-            // Create territory for player
-            await query(`
-              INSERT INTO game_tiles 
-                (game_instance_id, x_coord, y_coord, owner_id, gas_type) 
-              VALUES 
-                ($1, $2, $3, $4, $5)
-            `, [gameIdNum, x, y, player, gasType]);
+        // Create territory for player
+        await query(`
+          INSERT INTO game_tiles 
+            (game_instance_id, x_coord, y_coord, owner_id, gas_type) 
+          VALUES 
+            ($1, $2, $3, $4, $5)
+        `, [gameIdNum, x, y, player, gasType]);
           } catch (territoryError) {
             console.error(`❌ Error creating territory for player ${player}:`, territoryError);
             throw territoryError;
@@ -118,12 +136,12 @@ export async function startGame(gameId: number | string) {
       }
       
       try {
-        // Update player's territory count
-        await query(`
-          UPDATE player_game_states 
-          SET territories_count = 3 
-          WHERE game_instance_id = $1 AND player_id = $2
-        `, [gameIdNum, player]);
+      // Update player's territory count
+      await query(`
+        UPDATE player_game_states 
+        SET territories_count = 3 
+        WHERE game_instance_id = $1 AND player_id = $2
+      `, [gameIdNum, player]);
       } catch (updateError) {
         console.error(`❌ Error updating territory count for player ${player}:`, updateError);
         throw updateError;
@@ -137,12 +155,12 @@ export async function startGame(gameId: number | string) {
       for (let y = 0; y < 8; y++) {
         if (!assignedTiles.some(tile => tile.x === x && tile.y === y)) {
           try {
-            await query(`
-              INSERT INTO game_tiles 
-                (game_instance_id, x_coord, y_coord) 
-              VALUES 
-                ($1, $2, $3)
-            `, [gameIdNum, x, y]);
+          await query(`
+            INSERT INTO game_tiles 
+              (game_instance_id, x_coord, y_coord) 
+            VALUES 
+              ($1, $2, $3)
+          `, [gameIdNum, x, y]);
             emptyTilesCreated++;
           } catch (emptyTileError) {
             console.error(`❌ Error creating empty tile at (${x}, ${y}):`, emptyTileError);

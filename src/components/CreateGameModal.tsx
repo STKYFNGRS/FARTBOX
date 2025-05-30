@@ -6,6 +6,7 @@ interface CreateGameModalProps {
   isOpen: boolean;
   onClose: () => void;
   onGameCreated: (gameId: string) => void;
+  playerId: number | null;
 }
 
 interface GameOptions {
@@ -13,9 +14,10 @@ interface GameOptions {
   includeBots: boolean;
   botCount: number;
   gameDuration: number;
+  playerId?: number;
 }
 
-export default function CreateGameModal({ isOpen, onClose, onGameCreated }: CreateGameModalProps) {
+export default function CreateGameModal({ isOpen, onClose, onGameCreated, playerId }: CreateGameModalProps) {
   const [gameOptions, setGameOptions] = useState<GameOptions>({
     maxPlayers: 6,
     includeBots: true,
@@ -26,6 +28,11 @@ export default function CreateGameModal({ isOpen, onClose, onGameCreated }: Crea
   const [error, setError] = useState('');
 
   const createGame = async () => {
+    if (!playerId) {
+      setError('Player ID is required');
+      return;
+    }
+
     setLoading(true);
     setError('');
     
@@ -33,7 +40,10 @@ export default function CreateGameModal({ isOpen, onClose, onGameCreated }: Crea
       const response = await fetch('/api/games', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(gameOptions)
+        body: JSON.stringify({
+          ...gameOptions,
+          playerId
+        })
       });
       
       const data = await response.json();

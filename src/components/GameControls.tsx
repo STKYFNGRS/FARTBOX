@@ -74,17 +74,33 @@ const GameControls = ({
     if (gameState?.lastActionTime) {
       const lastAction = new Date(gameState.lastActionTime);
       const now = new Date();
-      const timeSinceLastAction = Math.floor((now.getTime() - lastAction.getTime()) / 1000);
-
-      const newCooldowns: {[key: string]: number} = {};
-      Object.entries(actions).forEach(([key, action]) => {
-        const remaining = Math.max(0, action.cooldown - timeSinceLastAction);
-        if (remaining > 0) {
-          newCooldowns[key] = remaining;
-        }
+      const timeDiffMs = now.getTime() - lastAction.getTime();
+      const timeSinceLastAction = Math.floor(timeDiffMs / 1000);
+      
+      // Debug logging for suspicious cooldown times
+      console.log('🕐 GameControls cooldown calculation:', {
+        lastActionTime: gameState.lastActionTime,
+        lastAction: lastAction.toISOString(),
+        now: now.toISOString(),
+        timeDiffMs,
+        timeSinceLastAction
       });
 
-      setCooldowns(newCooldowns);
+      // Only apply cooldowns if the timestamp makes sense (not in future, not too old)
+      if (timeSinceLastAction >= 0 && timeSinceLastAction < 300) { // Only apply if within last 5 minutes
+        const newCooldowns: {[key: string]: number} = {};
+        Object.entries(actions).forEach(([key, action]) => {
+          const remaining = Math.max(0, action.cooldown - timeSinceLastAction);
+          if (remaining > 0) {
+            newCooldowns[key] = remaining;
+          }
+        });
+        setCooldowns(newCooldowns);
+      } else {
+        // Clear cooldowns if timestamp is invalid or too old
+        console.log('🔄 Clearing cooldowns due to invalid/old timestamp');
+        setCooldowns({});
+      }
     }
   }, [gameState?.lastActionTime]);
 

@@ -173,7 +173,7 @@ function LeaderboardTab({ leaderboardData, loading, gameId }: { leaderboardData:
 function ProfileTab({ isWalletConnected, profileData, loading }: { isWalletConnected: boolean, profileData: any, loading: boolean }) {
   const { open: openAppKitModal } = useAppKit();
   const { address, chain } = useAccount();
-  
+
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-medium text-green-400">My Profile</h3>
@@ -188,7 +188,7 @@ function ProfileTab({ isWalletConnected, profileData, loading }: { isWalletConne
 
           {/* Game-specific stats if we have profile data */}
           {profileData && (
-            <div className="p-4 bg-green-500/10 rounded-lg space-y-3">
+          <div className="p-4 bg-green-500/10 rounded-lg space-y-3">
               <h4 className="text-sm font-medium text-green-400">Game Statistics</h4>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div className="text-center p-2 bg-black/20 rounded">
@@ -207,17 +207,17 @@ function ProfileTab({ isWalletConnected, profileData, loading }: { isWalletConne
                   <div className="text-yellow-400 font-bold">{profileData.stats?.totalTokens || 0}</div>
                   <div className="text-xs text-gray-400">$TOOT</div>
                 </div>
-              </div>
+            </div>
               
               {/* Level and XP */}
-              <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between">
                 <span className="text-sm">Level {profileData.stats?.level || 1}</span>
                 <div className="w-24 h-2 bg-green-900/30 rounded-full overflow-hidden">
                   <div 
                     className="h-full bg-green-400" 
                     style={{ width: `${(profileData.stats?.xpProgress || 0)}%` }}
                   ></div>
-                </div>
+            </div>
               </div>
             </div>
           )}
@@ -255,14 +255,14 @@ function ProfileTab({ isWalletConnected, profileData, loading }: { isWalletConne
                         'bg-gray-500/20 text-gray-400'
                       }`}>
                         #{game.placement}
-                      </div>
-                    </div>
+            </div>
+          </div>
                     <div className="text-xs text-gray-400 mt-1">
                       {game.territories_final} territories • +{game.tokens_earned} $TOOT
-                    </div>
-                  </div>
-                ))}
+                </div>
               </div>
+            ))}
+          </div>
             </div>
           )}
         </>

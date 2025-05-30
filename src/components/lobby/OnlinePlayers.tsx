@@ -20,17 +20,32 @@ interface PlayerProfileModalProps {
 }
 
 function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps) {
-  const { data: ensName } = useEnsName({
+  const { data: ensName, error: ensNameError } = useEnsName({
     address: player.wallet_address as `0x${string}`,
     chainId: 1,
+    query: {
+      enabled: !!player.wallet_address && isOpen, // Only fetch when modal is open
+      retry: 1,
+      staleTime: 300000, // 5 minutes cache
+    }
   });
   
-  const { data: ensAvatar } = useEnsAvatar({
-    name: ensName ? normalize(ensName) : undefined,
+  const { data: ensAvatar, error: ensAvatarError } = useEnsAvatar({
+    name: (ensName || player.ens_name) ? normalize(ensName || player.ens_name!) : undefined,
     chainId: 1,
+    query: {
+      enabled: !!(ensName || player.ens_name) && !player.ens_avatar, // Only fetch if not cached
+      retry: 1,
+      staleTime: 300000,
+    }
   });
 
   if (!isOpen) return null;
+
+  // Debug ENS errors
+  if (ensNameError || ensAvatarError) {
+    console.log('ENS errors in PlayerProfileModal:', { ensNameError, ensAvatarError });
+  }
 
   const displayName = ensName || player.ens_name || player.username || 
     `${player.wallet_address.slice(0, 6)}...${player.wallet_address.slice(-4)}`;
@@ -88,24 +103,38 @@ function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps
 }
 
 function PlayerAvatar({ player }: { player: OnlinePlayer }) {
-  const { data: ensName } = useEnsName({
+  // Use cached ENS data from database first, only fallback to network if needed
+  const { data: ensName, error: ensNameError } = useEnsName({
     address: player.wallet_address as `0x${string}`,
     chainId: 1,
+    query: {
+      enabled: !!player.wallet_address && !player.ens_name, // Only fetch if not cached
+      retry: 1,
+      staleTime: 600000, // 10 minutes cache for avatars
+    }
   });
   
-  const { data: ensAvatar } = useEnsAvatar({
-    name: ensName ? normalize(ensName) : undefined,
+  const { data: ensAvatar, error: ensAvatarError } = useEnsAvatar({
+    name: (ensName || player.ens_name) ? normalize(ensName || player.ens_name!) : undefined,
     chainId: 1,
+    query: {
+      enabled: !!(ensName || player.ens_name) && !player.ens_avatar, // Only fetch if not cached
+      retry: 1,
+      staleTime: 600000,
+    }
   });
 
-  const displayName = ensName || player.ens_name || player.username || 
+  // Use cached data preferentially
+  const displayName = player.ens_name || ensName || player.username || 
     `${player.wallet_address.slice(0, 6)}...${player.wallet_address.slice(-4)}`;
+  
+  const avatarSrc = player.ens_avatar || ensAvatar;
 
   return (
     <div className="w-8 h-8 rounded-full overflow-hidden bg-green-500/30 flex items-center justify-center">
-      {ensAvatar || player.ens_avatar ? (
+      {avatarSrc ? (
         <img 
-          src={ensAvatar || player.ens_avatar} 
+          src={avatarSrc} 
           alt="Profile" 
           className="w-full h-full object-cover"
           onError={(e) => {
@@ -132,10 +161,20 @@ export default function OnlinePlayers() {
       const response = await fetch('/api/users/online');
       if (response.ok) {
         const players = await response.json();
-        setOnlinePlayers(players);
+        console.log('👥 Fetched online players:', players);
+        
+        // Ensure we always show players even if ENS is failing
+        if (Array.isArray(players) && players.length > 0) {
+          setOnlinePlayers(players);
+        } else {
+          console.warn('No players data received or invalid format:', players);
+        }
+      } else {
+        console.error('Failed to fetch online players:', response.status, response.statusText);
       }
     } catch (error) {
       console.error('Error fetching online players:', error);
+      // Show connection issues in UI but don't break the component
     } finally {
       setLoading(false);
     }

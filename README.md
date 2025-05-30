@@ -43,8 +43,8 @@ A strategic territory control game built on Web3 technology, where players compe
    - Configure your environment variables
 
 3. **Start Development**
-   ```bash
-   npm run dev
+```bash
+npm run dev
    ```
 
 4. **Start Playing**

@@ -113,6 +113,15 @@ export default function GameBoard({
           setPlayers(data.players);
         }
         
+        // Store current turn info for display
+        if (data.game?.current_turn_player_id) {
+          // Add current turn info to the game state
+          setPlayers(prev => prev.map(p => ({
+            ...p,
+            isCurrentTurn: p.id === data.game.current_turn_player_id
+          })));
+        }
+        
         // Fetch recent actions
         const actionsResponse = await fetch(`/api/games/${gameId}/recent-actions`);
         if (actionsResponse.ok) {
@@ -364,7 +373,7 @@ export default function GameBoard({
         <div className="flex justify-between items-center mb-3">
           <h3 className="text-lg font-semibold text-green-400">Players</h3>
           <div className="text-xs text-gray-400">
-            Game updates every 3 seconds
+            Game updates every 3 seconds • Turn-based with 5s cooldowns
           </div>
         </div>
         <div className="flex flex-wrap gap-4">
@@ -372,34 +381,39 @@ export default function GameBoard({
             const playerColor = getPlayerColor(player.id);
             const isCurrentPlayer = player.id === playerId;
             const territoriesOwned = territories.filter(t => t.owner_id === player.id).length;
+            const isCurrentTurn = player.isCurrentTurn; // From game state
             
             return (
               <div 
                 key={player.id}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${
-                  isCurrentPlayer 
-                    ? 'bg-green-500/20 border-green-400/50' 
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
+                  isCurrentTurn
+                    ? 'bg-yellow-500/20 border-yellow-400/50 ring-2 ring-yellow-400/30 animate-pulse' 
+                    : isCurrentPlayer 
+                    ? 'bg-green-500/20 border-green-400/50 ring-2 ring-green-400/30' 
                     : 'bg-black/20 border-gray-600/50'
                 }`}
               >
                 <div 
-                  className={`w-6 h-6 rounded-full border-2`}
-                  style={{
+                  className={`w-6 h-6 rounded-full border-2 ${isCurrentTurn ? 'animate-pulse border-yellow-400' : ''}`}
+                  style={{ 
                     backgroundColor: playerColor?.bg,
-                    borderColor: playerColor?.border
+                    borderColor: isCurrentTurn ? '#facc15' : playerColor?.border
                   }}
                 ></div>
                 <div className="flex flex-col">
                   <span 
-                    className="font-semibold text-sm"
-                    style={{ color: playerColor?.text }}
+                    className="font-semibold text-sm flex items-center gap-1"
+                    style={{ color: isCurrentTurn ? '#facc15' : playerColor?.text }}
                   >
+                    {isCurrentTurn && <span className="text-yellow-400">🎯</span>}
                     {playerColor?.name} {player.username ? `(${player.username})` : ''}
                     {isCurrentPlayer && ' (You)'}
                     {player.is_bot && ' (AI)'}
                   </span>
                   <span className="text-xs text-gray-400">
                     {territoriesOwned} territories • {player.gas_units || 100} gas
+                    {isCurrentTurn && <span className="text-yellow-300 ml-1 font-semibold">• THEIR TURN</span>}
                   </span>
                 </div>
               </div>
@@ -416,8 +430,37 @@ export default function GameBoard({
             {recentActions.slice(0, 3).map((action, index) => {
               const player = players.find(p => p.id === action.player_id);
               const playerColor = action.player_id ? getPlayerColor(action.player_id) : PLAYER_COLORS[1];
-              const timeAgo = Math.floor((Date.now() - new Date(action.created_at).getTime()) / 1000);
+              
+              // Better timestamp handling
+              const actionTime = new Date(action.created_at);
+              const now = new Date();
+              const timeDiffMs = now.getTime() - actionTime.getTime();
+              const timeAgo = Math.floor(timeDiffMs / 1000);
+              
+              // Debug logging for problematic timestamps
+              if (timeAgo > 1000 || timeAgo < 0) {
+                console.log('⚠️ Suspicious timestamp in recent actions:', {
+                  action_created_at: action.created_at,
+                  actionTime: actionTime.toISOString(),
+                  now: now.toISOString(),
+                  timeDiffMs,
+                  timeAgo
+                });
+              }
+              
               const isAI = player?.is_bot;
+              
+              // Handle invalid timestamps gracefully
+              let displayTime: string;
+              if (timeAgo < 0) {
+                displayTime = 'now'; // Future timestamps default to 'now'
+              } else if (timeAgo < 60) {
+                displayTime = timeAgo + 's';
+              } else if (timeAgo < 3600) {
+                displayTime = Math.floor(timeAgo / 60) + 'm';
+              } else {
+                displayTime = '1h+';
+              }
               
               return (
                 <div key={index} className="flex items-center gap-2">
@@ -431,7 +474,7 @@ export default function GameBoard({
                   <span className="text-gray-400 text-xs">
                     {action.action_type === 'emit' ? '💨' : 
                      action.action_type === 'bomb' ? '💥' : '🛡️'} 
-                    {timeAgo}s ago
+                    {displayTime === 'now' ? displayTime : `${displayTime} ago`}
                   </span>
                 </div>
               );

@@ -77,7 +77,7 @@ export default function Home() {
     if (isConnected) {
       // Small delay to ensure smooth transition
       const timer = setTimeout(() => {
-        router.push('/lobby');
+      router.push('/lobby');
       }, 500);
       
       return () => clearTimeout(timer);

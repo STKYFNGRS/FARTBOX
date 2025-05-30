@@ -53,6 +53,11 @@ export default function Lobby() {
     chainId: 1,
   });
   
+  // Debug ENS data
+  useEffect(() => {
+    console.log('🏷️ ENS data changed:', { address, ensName, ensAvatar });
+  }, [address, ensName, ensAvatar]);
+  
   const [mounted, setMounted] = useState(false);
   const [games, setGames] = useState<GameInfo[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -71,18 +76,9 @@ export default function Lobby() {
     if (!address) return;
     
     try {
-      // First update user with ENS data
-      await fetch('/api/users/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          walletAddress: address,
-          ensName,
-          ensAvatar
-        })
-      });
-
-      // Then authenticate
+      console.log('🔍 Authenticating player with address:', address);
+      
+      // Just authenticate first, ENS data will be updated separately when available
       const response = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -90,6 +86,8 @@ export default function Lobby() {
       });
       
       const data = await response.json();
+      console.log('🔐 Auth response:', data);
+      
       if (data.player) {
         setPlayerId(data.player.id);
       }
@@ -202,7 +200,26 @@ export default function Lobby() {
     if (isConnected && address) {
       authenticatePlayer();
     }
-  }, [isConnected, address, ensName, ensAvatar]);
+  }, [isConnected, address]);
+
+  useEffect(() => {
+    if (isConnected && address && playerId && (ensName || ensAvatar)) {
+      console.log('🆔 ENS data loaded, updating database:', { ensName, ensAvatar });
+      
+      // Update ENS data when it becomes available
+      fetch('/api/users/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          walletAddress: address,
+          ensName,
+          ensAvatar
+        })
+      }).then(response => response.json())
+      .then(data => console.log('🔄 ENS update result:', data))
+      .catch(error => console.error('❌ ENS update error:', error));
+    }
+  }, [isConnected, address, playerId, ensName, ensAvatar]);
 
   useEffect(() => {
     if (playerId) {
@@ -440,6 +457,7 @@ export default function Lobby() {
         <CreateGameModal 
           isOpen={showCreateModal} 
           onClose={() => setShowCreateModal(false)}
+          playerId={playerId}
           onGameCreated={(gameId: string) => {
             setShowCreateModal(false);
             router.push(`/game/${gameId}`);

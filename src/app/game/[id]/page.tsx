@@ -245,16 +245,42 @@ export default function GamePage() {
   useEffect(() => {
     if (!mounted) return;
     
-    const interval = setInterval(fetchGameData, 3000); // Poll every 3 seconds
+    // More frequent polling for active games to show gas regeneration
+    const pollInterval = gameData?.status === 'active' ? 2000 : 5000; // 2s for active, 5s for others
+    
+    const interval = setInterval(() => {
+      fetchGameData();
+      
+      // Log gas state for debugging
+      if (gameState && gameData?.status === 'active') {
+        console.log('🔥 Gas update check:', {
+          gasUnits: gameState.gasUnits,
+          territories: gameState.territoriesCount,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }, pollInterval);
+    
     return () => clearInterval(interval);
-  }, [mounted, fetchGameData]);
+  }, [mounted, fetchGameData, gameData?.status, gameState]);
   
-  // Schedule AI actions for active games with bots
+  // Schedule AI actions for active games - only when it's AI turn
   useEffect(() => {
     if (!mounted || !gameData?.game?.status || gameData.game.status !== 'active') return;
     
     const hasAI = gameData.players?.some(p => p.is_bot);
     if (!hasAI) return;
+    
+    // Check if it's currently an AI player's turn
+    const currentTurnPlayerId = gameData.game?.current_turn_player_id;
+    const currentPlayer = gameData.players?.find(p => p.id === currentTurnPlayerId);
+    
+    if (!currentPlayer?.is_bot) {
+      // Not AI turn, don't schedule actions
+      return;
+    }
+    
+    console.log(`🤖 It's AI ${currentPlayer.username}'s turn - scheduling action`);
     
     const scheduleAIActions = () => {
       fetch(`/api/games/${gameId}/ai-actions`, {
@@ -263,6 +289,7 @@ export default function GamePage() {
       })
       .then(response => response.json())
       .then(data => {
+        console.log('🤖 AI response:', data);
         if (data.actionsPerformed > 0) {
           console.log(`🤖 AI performed ${data.actionsPerformed} actions`);
           // Refresh game data after AI actions
@@ -272,17 +299,13 @@ export default function GamePage() {
       .catch(error => console.error('Error triggering AI actions:', error));
     };
     
-    // Schedule AI actions every 10 seconds for more activity
-    const aiInterval = setInterval(scheduleAIActions, 10000);
-    
-    // Initial AI action after a short delay
-    const initialTimeout = setTimeout(scheduleAIActions, 3000);
+    // Give AI a moment to "think" then make their move
+    const aiTimeout = setTimeout(scheduleAIActions, 2000);
     
     return () => {
-      clearInterval(aiInterval);
-      clearTimeout(initialTimeout);
+      clearTimeout(aiTimeout);
     };
-  }, [mounted, gameData?.game?.status, gameData?.players, gameId, fetchGameData]);
+  }, [mounted, gameData?.game?.status, gameData?.game?.current_turn_player_id, gameData?.players, gameId, fetchGameData]);
   
   // Auto-clear action result after 5 seconds
   useEffect(() => {
@@ -313,7 +336,7 @@ export default function GamePage() {
     return (
       <div className="min-h-screen bg-gradient-to-b from-gray-900 to-black flex items-center justify-center">
         <div className="text-green-400 font-bold text-xl">Loading game...</div>
-      </div>
+        </div>
     );
   }
   

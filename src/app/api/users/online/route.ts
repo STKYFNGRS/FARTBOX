@@ -25,6 +25,13 @@ export async function GET() {
     return NextResponse.json(onlineUsers);
   } catch (error) {
     console.error('Error fetching online users:', error);
+    
+    // If database is having issues, return empty array instead of failing
+    if (error instanceof Error && error.message.includes('Control plane request failed')) {
+      console.warn('Neon database connection issues - returning empty array');
+      return NextResponse.json([]);
+    }
+    
     return NextResponse.json({ error: 'Failed to fetch online users' }, { status: 500 });
   }
 } 

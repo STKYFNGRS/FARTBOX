@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
           gi.status = 'pending' OR 
           (gi.status = 'active' AND gi.start_time > NOW() - INTERVAL '2 hours')
         )
-        AND gi.created_at > NOW() - INTERVAL '24 hours'
+        AND gi.start_time > NOW() - INTERVAL '24 hours'
       ORDER BY 
         gi.id DESC
       LIMIT 20

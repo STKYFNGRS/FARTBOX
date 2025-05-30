@@ -21,9 +21,9 @@ export async function POST(
       );
     }
     
-    // Verify game is active
-    const gameResult = await query<GameInstance>(`
-      SELECT status 
+    // Verify game is active and get current turn
+    const gameResult = await query<GameInstance & {current_turn_player_id: number}>(`
+      SELECT status, current_turn_player_id
       FROM game_instances 
       WHERE id = $1
     `, [gameId]);
@@ -31,6 +31,16 @@ export async function POST(
     if (gameResult.rowCount === 0 || gameResult.rows[0]?.status !== 'active') {
       return NextResponse.json(
         { error: 'Game is not active' },
+        { status: 400 }
+      );
+    }
+    
+    const game = gameResult.rows[0];
+    
+    // Check if it's this player's turn
+    if (game.current_turn_player_id !== playerId) {
+      return NextResponse.json(
+        { error: 'It is not your turn' },
         { status: 400 }
       );
     }
@@ -69,14 +79,29 @@ export async function POST(
     // For turn-based gameplay, we'll use a simple 5-second cooldown to prevent spam
     if (playerState.last_action_time) {
       const lastActionTime = new Date(playerState.last_action_time);
+      
+      // Debug timestamp handling
+      console.log('🕐 Cooldown check:', {
+        lastActionTime: lastActionTime.toISOString(),
+        now: now.toISOString(),
+        lastActionTimeMs: lastActionTime.getTime(),
+        nowMs: now.getTime()
+      });
+      
       const timeSinceLastAction = now.getTime() - lastActionTime.getTime();
       
-      // Simple 5-second spam prevention
-      if (timeSinceLastAction < 5000) {
+      // Only apply cooldown if action was very recent (prevent timezone issues)
+      if (timeSinceLastAction > 0 && timeSinceLastAction < 5000) {
+        const remainingCooldown = Math.ceil((5000 - timeSinceLastAction) / 1000);
         return NextResponse.json(
-          { error: 'Please wait 5 seconds between actions' },
+          { error: `Please wait ${remainingCooldown} seconds between actions` },
           { status: 400 }
         );
+      }
+      
+      // If we get a negative time difference, it suggests timezone issues - ignore cooldown
+      if (timeSinceLastAction < 0) {
+        console.log('⚠️ Negative time difference detected, ignoring cooldown check');
       }
     }
     
@@ -156,8 +181,8 @@ export async function POST(
           
           // Log the action
           await query(`
-            INSERT INTO player_actions (game_instance_id, player_id, action_type, target_x, target_y, gas_spent)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO player_actions (game_instance_id, player_id, action_type, target_x, target_y, gas_spent, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, NOW())
           `, [gameId, playerId, actionType, parseInt(targetX), parseInt(targetY), gasSpent]);
           
           await query('COMMIT');
@@ -468,10 +493,13 @@ export async function POST(
         // Record action in action history
         await query(`
           INSERT INTO player_actions 
-            (game_instance_id, player_id, action_type, target_x, target_y, gas_spent, result) 
+            (game_instance_id, player_id, action_type, target_x, target_y, gas_spent, result, created_at) 
           VALUES 
-            ($1, $2, $3, $4, $5, $6, $7)
+            ($1, $2, $3, $4, $5, $6, $7, NOW())
         `, [gameId, playerId, actionType, parseInt(targetX), parseInt(targetY), gasSpent, actionResult ? 'success' : 'fail']);
+        
+        // Advance to next player's turn
+        await advanceToNextTurn(parseInt(gameId), playerId);
         
         // Check for victory condition (40+ territories for balanced gameplay on 96-tile map)
         const victoryCheck = await query<{territories_count: number}>(`
@@ -693,6 +721,48 @@ async function endGame(gameId: number, winnerId: number, victoryType: string) {
     return true;
   } catch (error) {
     console.error('Error ending game:', error);
+    return false;
+  }
+}
+
+// Helper function to advance to the next player's turn
+async function advanceToNextTurn(gameId: number, currentPlayerId: number) {
+  try {
+    // Get all players in the game ordered by turn_order
+    const playersResult = await query<{player_id: number, turn_order: number}>(`
+      SELECT player_id, turn_order
+      FROM player_game_states
+      WHERE game_instance_id = $1
+      ORDER BY turn_order
+    `, [gameId]);
+    
+    const players = playersResult.rows;
+    
+    if (players.length === 0) {
+      return false;
+    }
+    
+    // Find the next player's ID
+    let nextPlayerId = players[0].player_id; // Default to first player
+    for (let i = 0; i < players.length; i++) {
+      if (players[i].player_id === currentPlayerId) {
+        nextPlayerId = players[(i + 1) % players.length].player_id;
+        break;
+      }
+    }
+    
+    // Update game turn
+    await query(`
+      UPDATE game_instances 
+      SET current_turn_player_id = $1 
+      WHERE id = $2
+    `, [nextPlayerId, gameId]);
+    
+    console.log(`🔄 Turn advanced from player ${currentPlayerId} to player ${nextPlayerId} in game ${gameId}`);
+    
+    return true;
+  } catch (error) {
+    console.error('Error advancing to next turn:', error);
     return false;
   }
 } 

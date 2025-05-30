@@ -44,6 +44,15 @@ export async function GET(
     
     console.log(`[API] Found ${actionsResult.rowCount} recent actions for game ${gameId}`);
     
+    // Debug log the timestamps
+    if (actionsResult.rows.length > 0) {
+      console.log(`[API] Sample action timestamp:`, {
+        created_at: actionsResult.rows[0].created_at,
+        now: new Date(),
+        timeDiff: (new Date().getTime() - new Date(actionsResult.rows[0].created_at).getTime()) / 1000
+      });
+    }
+    
     return NextResponse.json({
       actions: actionsResult.rows,
       count: actionsResult.rowCount
