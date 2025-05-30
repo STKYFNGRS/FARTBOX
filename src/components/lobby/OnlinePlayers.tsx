@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAccount, useEnsName, useEnsAvatar } from 'wagmi';
-import { normalize } from 'viem/ens';
+import { useAccount } from 'wagmi';
 import { ProfileCard } from 'ethereum-identity-kit';
 
 interface OnlinePlayer {
@@ -24,26 +23,8 @@ function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps
   const [profileData, setProfileData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   
-  // Re-enable ENS resolution with better error handling
-  const { data: ensName } = useEnsName({
-    address: player.wallet_address as `0x${string}`,
-    chainId: 1,
-    query: {
-      retry: false,
-      staleTime: 300000,
-      enabled: isOpen, // Only fetch when modal is open
-    }
-  });
-  
-  const { data: ensAvatar } = useEnsAvatar({
-    name: ensName ? normalize(ensName) : undefined,
-    chainId: 1,
-    query: {
-      retry: false,
-      staleTime: 300000,
-      enabled: !!ensName && isOpen,
-    }
-  });
+  // Disable ENS resolution completely to avoid CCIP-v2 production errors
+  // The ProfileCard from ethereum-identity-kit will handle ENS internally without our hooks
 
   // Fetch player's game stats
   useEffect(() => {
@@ -71,7 +52,7 @@ function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps
     return null;
   }
 
-  const displayName = ensName || player.ens_name || player.username || 
+  const displayName = player.ens_name || player.username || 
     `${player.wallet_address.slice(0, 6)}...${player.wallet_address.slice(-4)}`;
 
   return (
@@ -209,32 +190,13 @@ function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps
 }
 
 function PlayerAvatar({ player }: { player: OnlinePlayer }) {
-  // Re-enable ENS resolution with better error handling
-  const { data: ensName } = useEnsName({
-    address: player.wallet_address as `0x${string}`,
-    chainId: 1,
-    query: {
-      retry: false, // Don't retry failed requests to avoid CCIP-v2 spam
-      staleTime: 300000, // Cache for 5 minutes
-      enabled: true, // Enable but with better error handling
-    }
-  });
-  
-  const { data: ensAvatar } = useEnsAvatar({
-    name: ensName ? normalize(ensName) : undefined,
-    chainId: 1,
-    query: {
-      retry: false,
-      staleTime: 300000,
-      enabled: !!ensName, // Only fetch if we have an ENS name
-    }
-  });
-
-  const displayName = ensName || player.ens_name || player.username || 
+  // Disable ENS resolution completely to avoid CCIP-v2 production errors
+  // Use only stored database data for avatars and names
+  const displayName = player.ens_name || player.username || 
     `${player.wallet_address.slice(0, 6)}...${player.wallet_address.slice(-4)}`;
   
-  // Use live ENS data first, fallback to stored data
-  const avatarSrc = ensAvatar || player.ens_avatar;
+  // Use only stored ENS data from database
+  const avatarSrc = player.ens_avatar;
   const fallbackLetter = displayName.charAt(0).toUpperCase();
 
   return (
