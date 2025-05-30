@@ -16,7 +16,7 @@ const effectiveProjectId = projectId || 'YOUR_PROJECT_ID_PLACEHOLDER';
 
 export const networks = [mainnet, base]; // Using mainnet and base
 
-//Set up the Wagmi Adapter to bypass CCIP-v2 issues and use direct mainnet ENS like ethereum-identity-kit
+// Use the same RPC configuration that ethereum-identity-kit uses internally
 export const wagmiAdapter = new WagmiAdapter({
   storage: createStorage({
     storage: cookieStorage,
@@ -25,11 +25,9 @@ export const wagmiAdapter = new WagmiAdapter({
   projectId: effectiveProjectId,
   networks,
   transports: {
-    // Use stable RPC endpoints that bypass CCIP-v2 issues
-    [mainnet.id]: http('https://eth-mainnet.g.alchemy.com/v2/demo', {
-      batch: true,
-    }),
-    [base.id]: http('https://mainnet.base.org'),
+    // Use default RPC endpoints like ethereum-identity-kit
+    [mainnet.id]: http(),
+    [base.id]: http(),
   },
 });
 
