@@ -59,19 +59,6 @@ export const modal = createAppKit({
   enableEIP6963: true,
   enableCoinbase: true,
   enableWalletConnect: true,
-  // Enable ENS resolution with fallback to mainnet
-  chainImages: {
-    1: 'https://token-icons.s3.amazonaws.com/eth.png',
-    8453: 'https://token-icons.s3.amazonaws.com/base.png'
-  },
-  // Force ENS resolution to use mainnet
-  customRpcUrls: {
-    'eip155:1': [
-      {
-        url: 'https://ethereum.publicnode.com'
-      }
-    ]
-  }
 });
 
 function AppKitProvider({ children, cookies }: { children: ReactNode; cookies: string | null }) {

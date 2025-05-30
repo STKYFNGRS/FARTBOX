@@ -1,6 +1,6 @@
-import { cookieStorage, createStorage, http } from '@wagmi/core';
+import { cookieStorage, createStorage, http, fallback } from '@wagmi/core';
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi';
-import { mainnet, base } from '@reown/appkit/networks'; // Added base network
+import { mainnet, base } from '@reown/appkit/networks';
 
 // Get projectId from https://cloud.reown.com
 export const projectId = process.env.NEXT_PUBLIC_REOWN_PROJECT_ID;
@@ -16,7 +16,7 @@ const effectiveProjectId = projectId || 'YOUR_PROJECT_ID_PLACEHOLDER';
 
 export const networks = [mainnet, base]; // Using mainnet and base
 
-//Set up the Wagmi Adapter (Config)
+//Set up the Wagmi Adapter with reliable ENS resolution
 export const wagmiAdapter = new WagmiAdapter({
   storage: createStorage({
     storage: cookieStorage,
@@ -25,22 +25,14 @@ export const wagmiAdapter = new WagmiAdapter({
   projectId: effectiveProjectId,
   networks,
   transports: {
-    [mainnet.id]: http('https://ethereum.publicnode.com'),
+    [mainnet.id]: fallback([
+      http('https://eth-mainnet.g.alchemy.com/v2/demo'),
+      http('https://rpc.ankr.com/eth'),
+      http('https://ethereum.publicnode.com'),
+      http() // AppKit default
+    ]),
     [base.id]: http('https://mainnet.base.org'),
   },
-  // Ensure ENS works properly with explicit mainnet configuration
-  customRpcUrls: {
-    'eip155:1': [
-      {
-        url: 'https://ethereum.publicnode.com'
-      }
-    ],
-    'eip155:8453': [
-      {
-        url: 'https://mainnet.base.org'
-      }
-    ]
-  }
 });
 
 export const config = wagmiAdapter.wagmiConfig; 

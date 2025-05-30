@@ -56,7 +56,9 @@ function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps
     }
   }, [isOpen, player.wallet_address]);
 
-  if (!isOpen) return null;
+  if (!isOpen) {
+    return null;
+  }
 
   const displayName = ensName || player.ens_name || player.username || 
     `${player.wallet_address.slice(0, 6)}...${player.wallet_address.slice(-4)}`;
@@ -84,38 +86,84 @@ function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps
           <div className="text-center text-gray-400 py-4">
             Loading game stats...
           </div>
-        ) : profileData ? (
+        ) : profileData && profileData.stats ? (
           <div className="space-y-4">
-            <h4 className="text-green-400 font-semibold">Game Statistics</h4>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-green-500/10 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold text-green-400">{profileData.games_played || 0}</div>
-                <div className="text-sm text-gray-400">Games Played</div>
+            <div className="p-4 bg-green-500/10 rounded-lg space-y-3">
+              <h4 className="text-sm font-medium text-green-400">Game Statistics</h4>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="text-center p-2 bg-black/20 rounded">
+                  <div className="text-green-400 font-bold">{profileData.stats?.totalGames || 0}</div>
+                  <div className="text-xs text-gray-400">Games</div>
+                </div>
+                <div className="text-center p-2 bg-black/20 rounded">
+                  <div className="text-green-400 font-bold">{profileData.stats?.wins || 0}</div>
+                  <div className="text-xs text-gray-400">Wins</div>
+                </div>
+                <div className="text-center p-2 bg-black/20 rounded">
+                  <div className="text-green-400 font-bold">{profileData.stats?.winRate || 0}%</div>
+                  <div className="text-xs text-gray-400">Win Rate</div>
+                </div>
+                <div className="text-center p-2 bg-black/20 rounded">
+                  <div className="text-yellow-400 font-bold">{profileData.stats?.totalTokens || 0}</div>
+                  <div className="text-xs text-gray-400">$TOOT</div>
+                </div>
               </div>
-              <div className="bg-green-500/10 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold text-green-400">{profileData.games_won || 0}</div>
-                <div className="text-sm text-gray-400">Wins</div>
-              </div>
-              <div className="bg-green-500/10 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold text-green-400">{profileData.total_territories || 0}</div>
-                <div className="text-sm text-gray-400">Total Territories</div>
-              </div>
-              <div className="bg-green-500/10 rounded-lg p-3 text-center">
-                <div className="text-2xl font-bold text-green-400">{profileData.total_gas_used || 0}</div>
-                <div className="text-sm text-gray-400">Gas Used</div>
+              
+              {/* Level and XP */}
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Level {profileData.stats?.level || 1}</span>
+                <div className="w-24 h-2 bg-green-900/30 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-green-400" 
+                    style={{ width: `${(profileData.stats?.xpProgress || 0)}%` }}
+                  ></div>
+                </div>
               </div>
             </div>
-            <div className="bg-green-500/10 rounded-lg p-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-400">Win Rate:</span>
-                <span className="text-green-400 font-semibold">
-                  {profileData.games_played > 0 
-                    ? `${Math.round((profileData.games_won / profileData.games_played) * 100)}%`
-                    : '0%'
-                  }
-                </span>
+            
+            {/* Achievements */}
+            {profileData?.achievements?.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-md font-medium text-green-400">Achievements</h4>
+                <div className="grid grid-cols-1 gap-2">
+                  {profileData.achievements.map((achievement: any, i: number) => (
+                    <div key={i} className="p-2 bg-green-500/10 rounded-lg flex items-center">
+                      <span className="text-lg mr-2">{achievement.icon}</span>
+                      <div className="flex-1">
+                        <div className="text-sm font-medium">{achievement.name}</div>
+                        <div className="text-xs text-gray-400">{achievement.description}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
+            
+            {/* Recent Games */}
+            {profileData?.recentGames?.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-md font-medium text-green-400">Recent Games</h4>
+                <div className="space-y-2">
+                  {profileData.recentGames.slice(0, 3).map((game: any, i: number) => (
+                    <div key={i} className="p-2 bg-green-500/10 rounded-lg">
+                      <div className="flex justify-between items-center">
+                        <div className="text-sm">Game #{game.game_id}</div>
+                        <div className={`text-xs px-2 py-1 rounded ${
+                          game.placement === 1 ? 'bg-yellow-500/20 text-yellow-400' :
+                          game.placement <= 3 ? 'bg-green-500/20 text-green-400' :
+                          'bg-gray-500/20 text-gray-400'
+                        }`}>
+                          #{game.placement}
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        {game.territories_final} territories • +{game.tokens_earned} $TOOT
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-center text-gray-400 py-4">
@@ -197,7 +245,6 @@ export default function OnlinePlayers() {
       const response = await fetch('/api/users/online');
       if (response.ok) {
         const players = await response.json();
-        console.log('👥 Fetched online players:', players);
         
         // Ensure we always show players even if ENS is failing
         if (Array.isArray(players) && players.length > 0) {
