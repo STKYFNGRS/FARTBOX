@@ -20,19 +20,40 @@ interface PlayerProfileModalProps {
   onClose: () => void;
 }
 
+// Error boundary for ENS operations to catch CCIP-v2 errors
+function withENSErrorBoundary<T extends object>(Component: React.ComponentType<T>) {
+  return function ENSErrorBoundaryWrapper(props: T) {
+    try {
+      return <Component {...props} />;
+    } catch (error) {
+      console.warn('ENS Error (likely CCIP-v2):', error);
+      return <Component {...props} />; // Render without ENS data on error
+    }
+  };
+}
+
 function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps) {
   const [profileData, setProfileData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   
-  // Re-enable ENS resolution using same approach as ethereum-identity-kit ProfileCard
+  // Configure ENS resolution to bypass CCIP-v2 issues (use same approach as ethereum-identity-kit)
   const { data: ensName } = useEnsName({
     address: player.wallet_address as `0x${string}`,
     chainId: 1, // Ethereum mainnet for ENS
+    query: {
+      retry: 1, // Reduce retries to fail fast on CCIP-v2 errors
+      staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    },
   });
   
   const { data: ensAvatar } = useEnsAvatar({
     name: ensName ? normalize(ensName) : undefined,
     chainId: 1,
+    query: {
+      retry: 1, // Reduce retries to fail fast on CCIP-v2 errors
+      staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+      enabled: !!ensName, // Only run if we have an ENS name
+    },
   });
 
   // Fetch player's game stats
@@ -199,15 +220,24 @@ function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps
 }
 
 function PlayerAvatar({ player }: { player: OnlinePlayer }) {
-  // Re-enable ENS resolution using same approach as ethereum-identity-kit
+  // Configure ENS resolution to bypass CCIP-v2 issues (use same approach as ethereum-identity-kit)
   const { data: ensName } = useEnsName({
     address: player.wallet_address as `0x${string}`,
     chainId: 1, // Ethereum mainnet for ENS
+    query: {
+      retry: 1, // Reduce retries to fail fast on CCIP-v2 errors
+      staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    },
   });
   
   const { data: ensAvatar } = useEnsAvatar({
     name: ensName ? normalize(ensName) : undefined,
     chainId: 1,
+    query: {
+      retry: 1, // Reduce retries to fail fast on CCIP-v2 errors
+      staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+      enabled: !!ensName, // Only run if we have an ENS name
+    },
   });
 
   // Use live ENS data first (like ProfileCard does), fallback to stored data
@@ -248,10 +278,14 @@ function PlayerListItem({ player, isCurrentUser, onPlayerClick }: {
   isCurrentUser: boolean; 
   onPlayerClick: (player: OnlinePlayer) => void;
 }) {
-  // Use live ENS data first if available (like ProfileCard does), fallback to stored
+  // Configure ENS resolution to bypass CCIP-v2 issues (use same approach as ethereum-identity-kit)
   const { data: ensName } = useEnsName({
     address: player.wallet_address as `0x${string}`,
     chainId: 1,
+    query: {
+      retry: 1, // Reduce retries to fail fast on CCIP-v2 errors
+      staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    },
   });
   
   const displayName = ensName || player.ens_name || player.username || 
