@@ -97,12 +97,16 @@ function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps
     `${player.wallet_address.slice(0, 6)}...${player.wallet_address.slice(-4)}`;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div 
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
         className="bg-gray-900 rounded-xl max-w-md w-full max-h-[80vh] overflow-y-auto border border-green-500/30"
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="p-6 border-b border-gray-700">
@@ -298,7 +302,14 @@ const OnlinePlayersComponent = withENSErrorBoundary(function OnlinePlayersInner(
         const response = await fetch('/api/users/online');
         if (response.ok) {
           const data = await response.json();
-          setPlayers(data || []);
+          
+          // Ensure unique players by wallet address and filter out invalid entries
+          const uniquePlayers = data ? data.filter((player: OnlinePlayer, index: number, arr: OnlinePlayer[]) => 
+            player.wallet_address && 
+            arr.findIndex(p => p.wallet_address.toLowerCase() === player.wallet_address.toLowerCase()) === index
+          ) : [];
+          
+          setPlayers(uniquePlayers);
         } else {
           console.error('Failed to fetch online players:', response.statusText);
         }
@@ -347,19 +358,27 @@ const OnlinePlayersComponent = withENSErrorBoundary(function OnlinePlayersInner(
         <p className="text-gray-400 text-sm">No players online</p>
       ) : (
         <div className="space-y-2">
-          {players.map((player) => (
-            <div key={player.id} className="flex items-center gap-3 group relative">
-              <PlayerAvatar player={player} onClick={handlePlayerClick} />
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-white truncate">
-                  {player.ens_name || player.username || `${player.wallet_address.slice(0, 6)}...${player.wallet_address.slice(-4)}`}
-                </div>
-                <div className="text-xs text-gray-400">
-                  {player.wallet_address.slice(0, 8)}...
+          {players.map((player) => {
+            // Prioritize ENS name, then username, then formatted address
+            const displayName = player.ens_name || player.username || `${player.wallet_address.slice(0, 6)}...${player.wallet_address.slice(-4)}`;
+            
+            return (
+              <div key={player.wallet_address} className="flex items-center gap-3 group relative">
+                <PlayerAvatar player={player} onClick={handlePlayerClick} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-white truncate">
+                    {displayName}
+                  </div>
+                  {/* Only show address if it's different from display name */}
+                  {player.ens_name && (
+                    <div className="text-xs text-gray-400">
+                      {player.wallet_address.slice(0, 8)}...{player.wallet_address.slice(-4)}
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
