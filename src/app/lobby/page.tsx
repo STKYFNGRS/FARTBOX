@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAccount, useEnsName, useEnsAvatar } from 'wagmi';
+import { useAccount } from 'wagmi';
 import { normalize } from 'viem/ens';
 
 import GameHeader from '../../components/GameHeader';
@@ -54,22 +54,6 @@ interface Game {
 export default function Lobby() {
   const { address, isConnected } = useAccount();
   const router = useRouter();
-  
-  // Get ENS data for current user
-  const { data: ensName } = useEnsName({
-    address: address,
-    chainId: 1,
-  });
-  
-  const { data: ensAvatar } = useEnsAvatar({
-    name: ensName ? normalize(ensName) : undefined,
-    chainId: 1,
-  });
-  
-  // Debug ENS data
-  useEffect(() => {
-    console.log('🏷️ ENS data changed:', { address, ensName, ensAvatar });
-  }, [address, ensName, ensAvatar]);
   
   const [mounted, setMounted] = useState(false);
   const [games, setGames] = useState<GameInfo[]>([]);
@@ -214,25 +198,6 @@ export default function Lobby() {
       authenticatePlayer();
     }
   }, [isConnected, address]);
-
-  useEffect(() => {
-    if (isConnected && address && playerId && (ensName || ensAvatar)) {
-      console.log('🆔 ENS data loaded, updating database:', { ensName, ensAvatar });
-      
-      // Update ENS data when it becomes available
-      fetch('/api/users/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          walletAddress: address,
-          ensName,
-          ensAvatar
-        })
-      }).then(response => response.json())
-      .then(data => console.log('🔄 ENS update result:', data))
-      .catch(error => console.error('❌ ENS update error:', error));
-    }
-  }, [isConnected, address, playerId, ensName, ensAvatar]);
 
   useEffect(() => {
     if (playerId) {
