@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     // Allow multiple statuses - show pending and active games in lobby, but filter out old/stale games
     const statusFilter = status === 'pending' ? ['pending', 'active'] : [status];
     
-    const gamesResult = await query<GameInstance & {player_count: string}>(`
+    const gamesResult = await query<GameInstance & {player_count: string, human_count: string, bot_count: string}>(`
       SELECT 
         gi.id, 
         gi.start_time, 
@@ -24,9 +24,22 @@ export async function GET(request: NextRequest) {
         gi.game_duration,
         (
           SELECT COUNT(*) 
-          FROM player_game_states 
-          WHERE game_instance_id = gi.id
-        ) as player_count
+          FROM player_game_states pgs
+          JOIN players p ON pgs.player_id = p.id
+          WHERE pgs.game_instance_id = gi.id
+        ) as player_count,
+        (
+          SELECT COUNT(*) 
+          FROM player_game_states pgs
+          JOIN players p ON pgs.player_id = p.id
+          WHERE pgs.game_instance_id = gi.id AND p.is_bot = false
+        ) as human_count,
+        (
+          SELECT COUNT(*) 
+          FROM player_game_states pgs
+          JOIN players p ON pgs.player_id = p.id
+          WHERE pgs.game_instance_id = gi.id AND p.is_bot = true
+        ) as bot_count
       FROM 
         game_instances gi
       WHERE 

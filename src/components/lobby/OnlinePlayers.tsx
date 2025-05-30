@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAccount, useEnsName, useEnsAvatar } from 'wagmi';
 import { normalize } from 'viem/ens';
+import { ProfileCard } from 'ethereum-identity-kit';
 
 interface OnlinePlayer {
   id: number;
@@ -20,65 +21,111 @@ interface PlayerProfileModalProps {
 }
 
 function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps) {
-  const { data: ensName, error: ensNameError } = useEnsName({
+  const [profileData, setProfileData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  
+  const { data: ensName } = useEnsName({
     address: player.wallet_address as `0x${string}`,
     chainId: 1,
-    query: {
-      enabled: !!player.wallet_address && isOpen, // Only fetch when modal is open
-      retry: 1,
-      staleTime: 300000, // 5 minutes cache
-    }
   });
   
-  const { data: ensAvatar, error: ensAvatarError } = useEnsAvatar({
-    name: (ensName || player.ens_name) ? normalize(ensName || player.ens_name!) : undefined,
+  const { data: ensAvatar } = useEnsAvatar({
+    name: ensName ? normalize(ensName) : undefined,
     chainId: 1,
-    query: {
-      enabled: !!(ensName || player.ens_name) && !player.ens_avatar, // Only fetch if not cached
-      retry: 1,
-      staleTime: 300000,
-    }
   });
 
-  if (!isOpen) return null;
+  // Fetch player's game stats
+  useEffect(() => {
+    if (isOpen && player.wallet_address) {
+      const fetchProfile = async () => {
+        try {
+          setLoading(true);
+          const response = await fetch(`/api/profile?walletAddress=${player.wallet_address}`);
+          if (response.ok) {
+            const data = await response.json();
+            setProfileData(data);
+          }
+        } catch (error) {
+          console.error('Error fetching player profile:', error);
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      fetchProfile();
+    }
+  }, [isOpen, player.wallet_address]);
 
-  // Debug ENS errors
-  if (ensNameError || ensAvatarError) {
-    console.log('ENS errors in PlayerProfileModal:', { ensNameError, ensAvatarError });
-  }
+  if (!isOpen) return null;
 
   const displayName = ensName || player.ens_name || player.username || 
     `${player.wallet_address.slice(0, 6)}...${player.wallet_address.slice(-4)}`;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-gray-900 border border-green-500/30 rounded-lg p-6 max-w-md w-full mx-4" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center gap-4 mb-4">
-          <div className="w-16 h-16 rounded-full overflow-hidden bg-green-500/30 flex items-center justify-center">
-            {ensAvatar || player.ens_avatar ? (
-              <img 
-                src={ensAvatar || player.ens_avatar} 
-                alt="Profile" 
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              <span className="text-green-400 text-xl font-bold">
-                {displayName.charAt(0).toUpperCase()}
-              </span>
-            )}
-          </div>
-          <div>
-            <h3 className="text-green-400 font-bold text-lg">{displayName}</h3>
-            <p className="text-gray-400 text-sm">
-              {player.wallet_address.slice(0, 8)}...{player.wallet_address.slice(-8)}
-            </p>
+      <div className="bg-gray-900 border border-green-500/30 rounded-lg p-6 max-w-md w-full mx-4 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        
+        {/* ENS Profile Card */}
+        <div className="mb-6">
+          <h3 className="text-green-400 font-bold text-lg mb-4">Player Profile</h3>
+          
+          {/* Identity Kit Profile Card with error boundary */}
+          <div className="rounded-lg overflow-hidden bg-gray-800/50 min-h-[200px] relative">
+            <div className="w-full p-4">
+              <div className="identity-kit-profile-card">
+                <ProfileCard addressOrName={player.wallet_address as `0x${string}`} />
+              </div>
+            </div>
           </div>
         </div>
         
-        <div className="space-y-3">
+        {/* Game Statistics */}
+        {loading ? (
+          <div className="text-center text-gray-400 py-4">
+            Loading game stats...
+          </div>
+        ) : profileData ? (
+          <div className="space-y-4">
+            <h4 className="text-green-400 font-semibold">Game Statistics</h4>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-green-500/10 rounded-lg p-3 text-center">
+                <div className="text-2xl font-bold text-green-400">{profileData.games_played || 0}</div>
+                <div className="text-sm text-gray-400">Games Played</div>
+              </div>
+              <div className="bg-green-500/10 rounded-lg p-3 text-center">
+                <div className="text-2xl font-bold text-green-400">{profileData.games_won || 0}</div>
+                <div className="text-sm text-gray-400">Wins</div>
+              </div>
+              <div className="bg-green-500/10 rounded-lg p-3 text-center">
+                <div className="text-2xl font-bold text-green-400">{profileData.total_territories || 0}</div>
+                <div className="text-sm text-gray-400">Total Territories</div>
+              </div>
+              <div className="bg-green-500/10 rounded-lg p-3 text-center">
+                <div className="text-2xl font-bold text-green-400">{profileData.total_gas_used || 0}</div>
+                <div className="text-sm text-gray-400">Gas Used</div>
+              </div>
+            </div>
+            <div className="bg-green-500/10 rounded-lg p-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-400">Win Rate:</span>
+                <span className="text-green-400 font-semibold">
+                  {profileData.games_played > 0 
+                    ? `${Math.round((profileData.games_won / profileData.games_played) * 100)}%`
+                    : '0%'
+                  }
+                </span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center text-gray-400 py-4">
+            <p>No game statistics available yet.</p>
+            <p className="text-sm">This player hasn't completed any games.</p>
+          </div>
+        )}
+        
+        {/* Player Status */}
+        <div className="mt-6 space-y-3">
           <div className="flex justify-between">
             <span className="text-gray-400">Status:</span>
             <span className="text-green-400">Online</span>
@@ -103,32 +150,21 @@ function PlayerProfileModal({ player, isOpen, onClose }: PlayerProfileModalProps
 }
 
 function PlayerAvatar({ player }: { player: OnlinePlayer }) {
-  // Use cached ENS data from database first, only fallback to network if needed
-  const { data: ensName, error: ensNameError } = useEnsName({
+  // Simple ENS resolution - always try to get fresh data
+  const { data: ensName } = useEnsName({
     address: player.wallet_address as `0x${string}`,
     chainId: 1,
-    query: {
-      enabled: !!player.wallet_address && !player.ens_name, // Only fetch if not cached
-      retry: 1,
-      staleTime: 600000, // 10 minutes cache for avatars
-    }
   });
   
-  const { data: ensAvatar, error: ensAvatarError } = useEnsAvatar({
-    name: (ensName || player.ens_name) ? normalize(ensName || player.ens_name!) : undefined,
+  const { data: ensAvatar } = useEnsAvatar({
+    name: ensName ? normalize(ensName) : undefined,
     chainId: 1,
-    query: {
-      enabled: !!(ensName || player.ens_name) && !player.ens_avatar, // Only fetch if not cached
-      retry: 1,
-      staleTime: 600000,
-    }
   });
 
-  // Use cached data preferentially
-  const displayName = player.ens_name || ensName || player.username || 
+  const displayName = ensName || player.ens_name || player.username || 
     `${player.wallet_address.slice(0, 6)}...${player.wallet_address.slice(-4)}`;
   
-  const avatarSrc = player.ens_avatar || ensAvatar;
+  const avatarSrc = ensAvatar || player.ens_avatar;
 
   return (
     <div className="w-8 h-8 rounded-full overflow-hidden bg-green-500/30 flex items-center justify-center">

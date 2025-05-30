@@ -16,6 +16,8 @@ interface GameInfo {
   status: string;
   game_duration: number;
   isPlayerInGame?: boolean;
+  human_count: number;
+  bot_count: number;
 }
 
 interface ChatMessage {
@@ -36,6 +38,17 @@ interface OnlineUser {
   walletAddress: string;
   isBot?: boolean;
   lastSeen: Date;
+}
+
+interface Game {
+  id: number;
+  status: string;
+  player_count: number;
+  max_players: number;
+  game_duration: number;
+  isPlayerInGame?: boolean;
+  human_count: number;
+  bot_count: number;
 }
 
 export default function Lobby() {
@@ -346,7 +359,7 @@ export default function Lobby() {
                       <div>
                         <div className="font-semibold text-green-300">Game {game.id}</div>
                         <div className="text-sm text-gray-400">
-                          {game.player_count}/{game.max_players} players • {game.game_duration}min duration
+                          {game.human_count} human{game.human_count !== 1 ? 's' : ''} + {game.bot_count} AI{game.bot_count !== 1 ? 's' : ''} / {game.max_players} max • {game.game_duration}min
                         </div>
                       </div>
                     </div>
@@ -371,7 +384,7 @@ export default function Lobby() {
                       ) : (
                         <button 
                           onClick={() => joinGame(game.id)}
-                          disabled={game.player_count >= game.max_players}
+                          disabled={game.human_count >= game.max_players}
                           className="px-4 py-2 bg-green-500/20 text-green-400 border border-green-500/30 rounded hover:bg-green-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           Join Game
@@ -396,9 +409,9 @@ export default function Lobby() {
             </div>
             <div className="bg-black/40 backdrop-blur-md border border-green-500/20 rounded-lg p-4 text-center">
               <div className="text-2xl font-bold text-green-400">
-                {games.reduce((sum, game) => sum + game.player_count, 0)}
+                {games.reduce((sum, game) => sum + game.human_count, 0)}
               </div>
-              <div className="text-sm text-gray-400">Players in Games</div>
+              <div className="text-sm text-gray-400">Human Players in Games</div>
             </div>
           </div>
         </div>

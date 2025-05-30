@@ -25,9 +25,22 @@ export const wagmiAdapter = new WagmiAdapter({
   projectId: effectiveProjectId,
   networks,
   transports: {
-    [mainnet.id]: http(),
-    [base.id]: http(),
+    [mainnet.id]: http('https://ethereum.publicnode.com'),
+    [base.id]: http('https://mainnet.base.org'),
   },
+  // Ensure ENS works properly with explicit mainnet configuration
+  customRpcUrls: {
+    'eip155:1': [
+      {
+        url: 'https://ethereum.publicnode.com'
+      }
+    ],
+    'eip155:8453': [
+      {
+        url: 'https://mainnet.base.org'
+      }
+    ]
+  }
 });
 
 export const config = wagmiAdapter.wagmiConfig; 
