@@ -185,6 +185,33 @@ export async function POST(
             VALUES ($1, $2, $3, $4, $5, $6, NOW())
           `, [gameId, playerId, actionType, parseInt(targetX), parseInt(targetY), gasSpent]);
           
+          // Advance to next player's turn
+          await advanceToNextTurn(parseInt(gameId), playerId);
+          
+          // Check if the next player is an AI and trigger their action immediately
+          const nextTurnResult = await query(`
+            SELECT p.id, p.is_bot
+            FROM players p
+            INNER JOIN game_instances gi ON gi.current_turn_player_id = p.id
+            WHERE gi.id = $1
+          `, [gameId]);
+          
+          if (nextTurnResult.rows[0]?.is_bot) {
+            // Trigger AI action in the background (don't wait for it)
+            setTimeout(async () => {
+              try {
+                const aiResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/games/${gameId}/ai-actions`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' }
+                });
+                const aiResult = await aiResponse.json();
+                console.log(`🤖 Auto-triggered AI action: ${aiResult.message}`);
+              } catch (error) {
+                console.error('Error auto-triggering AI action:', error);
+              }
+            }, 1000); // 1 second delay to let transaction complete
+          }
+          
           await query('COMMIT');
           
           return NextResponse.json({
@@ -500,6 +527,30 @@ export async function POST(
         
         // Advance to next player's turn
         await advanceToNextTurn(parseInt(gameId), playerId);
+        
+        // Check if the next player is an AI and trigger their action immediately
+        const nextTurnResult = await query(`
+          SELECT p.id, p.is_bot
+          FROM players p
+          INNER JOIN game_instances gi ON gi.current_turn_player_id = p.id
+          WHERE gi.id = $1
+        `, [gameId]);
+        
+        if (nextTurnResult.rows[0]?.is_bot) {
+          // Trigger AI action in the background (don't wait for it)
+          setTimeout(async () => {
+            try {
+              const aiResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/games/${gameId}/ai-actions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+              });
+              const aiResult = await aiResponse.json();
+              console.log(`🤖 Auto-triggered AI action: ${aiResult.message}`);
+            } catch (error) {
+              console.error('Error auto-triggering AI action:', error);
+            }
+          }, 1000); // 1 second delay to let transaction complete
+        }
         
         // Check for victory condition (40+ territories for balanced gameplay on 96-tile map)
         const victoryCheck = await query<{territories_count: number}>(`
